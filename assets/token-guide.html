@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>如何获取 h3_token</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .step-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .step-content {
+            color: #666;
+            line-height: 1.8;
+        }
+        
+        .step-content ol {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+        
+        .step-content li {
+            margin-bottom: 8px;
+        }
+        
+        .tip {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 15px;
+            font-size: 13px;
+        }
+        
+        .tip strong {
+            color: #856404;
+        }
+        
+        .warning {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 15px;
+            font-size: 13px;
+            color: #721c24;
+        }
+        
+        .code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        .browser-tabs {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .browser-tab {
+            padding: 8px 16px;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+        
+        .browser-tab:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 12px;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔑 如何获取 h3_token</h1>
+            <p>从浏览器 Cookie 中复制氚云认证 Token</p>
+        </div>
+        
+        <div class="content">
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">1</span>
+                    登录氚云平台
+                </div>
+                <div class="step-content">
+                    <ol>
+                        <li>打开浏览器(推荐使用 Chrome 或 Edge)</li>
+                        <li>访问氚云平台并登录您的账号</li>
+                        <li>确保已成功进入氚云工作台</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">2</span>
+                    打开开发者工具
+                </div>
+                <div class="step-content">
+                    <ol>
+                        <li>在氚云页面按 <span class="code">F12</span> 键</li>
+                        <li>或者右键点击页面任意位置,选择"检查"</li>
+                        <li>开发者工具面板会在右侧或底部打开</li>
+                    </ol>
+                    <div class="tip">
+                        <strong>💡 提示:</strong> 如果按 F12 没反应,可以尝试 <span class="code">Ctrl+Shift+I</span> (Windows) 或 <span class="code">Cmd+Option+I</span> (Mac)
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">3</span>
+                    查找 h3_token
+                </div>
+                <div class="step-content">
+                    <div class="browser-tabs">
+                        <div class="browser-tab">Chrome / Edge</div>
+                        <div class="browser-tab">Firefox</div>
+                    </div>
+                    
+                    <ol style="margin-top: 15px;">
+                        <li>切换到 <strong>Application</strong>(应用程序) 标签</li>
+                        <li>在左侧菜单展开 <strong>Storage</strong>(存储) → <strong>Cookies</strong></li>
+                        <li>点击氚云平台的域名: www.h3yun.com</li>
+                        <li>在右侧列表中找到 <span class="code">h3_token</span></li>
+                        <li>复制其 <strong>Value</strong>(值) 列的完整内容</li>
+                    </ol>
+                    
+                    <div class="tip">
+                        <strong>💡 提示:</strong> h3_token 的值通常是一串较长的字母数字组合,请完整复制
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">4</span>
+                    粘贴到插件
+                </div>
+                <div class="step-content">
+                    <ol>
+                        <li>回到 VSCode 的输入框</li>
+                        <li>将复制的 Token 粘贴进去</li>
+                        <li>点击确定完成输入</li>
+                    </ol>
+                    <div class="warning">
+                        <strong>⚠️ 注意:</strong> Token 有一定有效期,如果后续同步时提示失效,请重新获取新的 Token
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            H3Yun CMax - 氚云代码同步工具
+        </div>
+    </div>
+</body>
+</html>
