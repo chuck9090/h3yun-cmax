@@ -184,6 +184,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             // 更新 Token 并重试
             h3yunApi.setToken(newToken);
             config.h3Token = newToken;
+            fileService.updateToken(appFolderPath, newToken);
             
             progress.report({ message: '正在使用新 Token 重新获取数据...', increment: 5 });
             forms = await h3yunApi.getForms(config.appCode);
@@ -298,7 +299,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
                 if (finalContent !== null && finalContent !== undefined) {
                   fileService.saveFile(localPath, finalContent);
-                } else if (finalContent === null && !fileService.readFile(localPath)) {
+                } else if (finalContent === null && !fileService.fileExists(localPath)) {
                   fileService.saveFile(localPath, remoteContent);
                 }
               }

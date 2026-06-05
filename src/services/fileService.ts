@@ -139,6 +139,15 @@ export class FileService {
   }
 
   /**
+   * 检查文件是否存在
+   * @param filePath 文件完整路径
+   * @returns 文件是否存在
+   */
+  fileExists(filePath: string): boolean {
+    return fs.existsSync(filePath);
+  }
+
+  /**
    * 检查文件夹是否包含 cmax.json
    * @param folderPath 文件夹路径
    * @returns 是否包含配置文件
@@ -146,6 +155,18 @@ export class FileService {
   hasCmaxConfig(folderPath: string): boolean {
     const configPath = path.join(folderPath, 'cmax.json');
     return fs.existsSync(configPath);
+  }
+
+  /**
+   * 仅更新 cmax.json 中的 Token
+   * @param appFolderPath 应用文件夹路径
+   * @param token 新的 Token 值
+   */
+  updateToken(appFolderPath: string, token: string): void {
+    const config = this.readCmaxConfig(appFolderPath);
+    config.h3Token = token;
+    const configPath = path.join(appFolderPath, 'cmax.json');
+    this.saveFile(configPath, JSON.stringify(config, null, 2));
   }
 
   /**
