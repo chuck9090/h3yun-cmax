@@ -3,7 +3,7 @@
   "displayName": "H3Yun CMax",
   "description": "氚云低代码平台二开代码同步工具 - 自动从氚云平台同步应用代码到本地,实现版本管理和AI辅助开发",
   "version": "0.0.1",
-  "publisher": "h3yun",
+  "publisher": "ChuckFu",
   "engines": {
     "vscode": "^1.80.0"
   },
