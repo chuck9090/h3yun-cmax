@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
+import { gitService } from '../services/gitService';
 import { CmaxFormEntry, FileContentMap } from '../types';
 import { buildFolderName } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
@@ -14,18 +15,18 @@ import {
 } from '../ui/conflictDialog';
 
 /**
- * 提示用户重新输入 Token
+ * 提示用户输入 Token
  */
-async function promptForNewToken(appFolderPath: string): Promise<string | undefined> {
-  const result = await vscode.window.showErrorMessage(
-    'Token 已失效,请重新输入',
+async function promptForToken(message: string): Promise<string | undefined> {
+  const result = await vscode.window.showWarningMessage(
+    message,
     { modal: true },
-    '重新输入 Token'
+    '输入 Token'
   );
 
-  if (result === '重新输入 Token') {
+  if (result === '输入 Token') {
     const token = await vscode.window.showInputBox({
-      prompt: '请输入新的氚云认证 Token (h3_token)',
+      prompt: '请输入氚云认证 Token (h3_token)',
       placeHolder: '从浏览器 Cookie 中复制 h3_token 值',
       password: true,
       validateInput: (value) => {
@@ -41,6 +42,40 @@ async function promptForNewToken(appFolderPath: string): Promise<string | undefi
   }
 
   return undefined;
+}
+
+async function promptAndCommit(appFolderPath: string, summary: string): Promise<void> {
+  const gitAction = await vscode.window.showInformationMessage(
+    `${summary}\n\n是否要自动提交本次同步变更?`,
+    { modal: true },
+    '提交变更',
+    '跳过'
+  );
+
+  if (gitAction !== '提交变更') {
+    return;
+  }
+
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: '正在提交本次同步变更',
+        cancellable: false
+      },
+      async (progress) => {
+        progress.report({ message: '正在执行 git add 和 git commit...' });
+        await gitService.initAndCommit(appFolderPath, '同步氚云项目');
+      }
+    );
+
+    vscode.window.showInformationMessage('本次同步变更已提交');
+  } catch (error) {
+    vscode.window.showWarningMessage(
+      `Git 提交失败: ${error instanceof Error ? error.message : String(error)}`,
+      { modal: true }
+    );
+  }
 }
 
 /**
@@ -121,6 +156,7 @@ function findFormByCode(
  */
 export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   let appFolderPath: string;
+  let syncSummary: string | undefined;
 
   // 获取应用文件夹路径
   if (uri) {
@@ -151,8 +187,26 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     return;
   }
 
+  let h3Token: string;
+  try {
+    h3Token = fileService.readToken(appFolderPath);
+  } catch (error) {
+    const token = await promptForToken(
+      `当前项目缺少可用的 .h3token 文件,请重新输入 Token。\n\n${error instanceof Error ? error.message : String(error)}`
+    );
+
+    if (!token) {
+      vscode.window.showInformationMessage('已取消同步');
+      return;
+    }
+
+    fileService.saveToken(appFolderPath, token);
+    fileService.ensureGitIgnore(appFolderPath);
+    h3Token = token;
+  }
+
   // 设置 Token
-  h3yunApi.setToken(config.h3Token);
+  h3yunApi.setToken(h3Token);
 
   // 显示进度条
   await vscode.window.withProgress(
@@ -175,7 +229,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           // 检查是否是 Token 失效
           if (errorMsg.includes('401') || errorMsg.includes('认证') || errorMsg.includes('token') || errorMsg.includes('Token')) {
             // 提示用户重新输入 Token
-            const newToken = await promptForNewToken(appFolderPath);
+            const newToken = await promptForToken('Token 已失效,请重新输入');
             
             if (!newToken) {
               throw new Error('已取消同步');
@@ -183,8 +237,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
             // 更新 Token 并重试
             h3yunApi.setToken(newToken);
-            config.h3Token = newToken;
-            fileService.updateToken(appFolderPath, newToken);
+            fileService.saveToken(appFolderPath, newToken);
+            fileService.ensureGitIgnore(appFolderPath);
             
             progress.report({ message: '正在使用新 Token 重新获取数据...', increment: 5 });
             forms = await h3yunApi.getForms(config.appCode);
@@ -196,6 +250,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
           fileService.updateLastSyncTime(appFolderPath);
+          fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
+          syncSummary = '同步完成! 该应用下没有表单';
           return;
         }
 
@@ -224,7 +280,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           if (!codes) continue;
 
           for (const [filename, remoteContent] of Object.entries(codes)) {
-            if (filename === 'fields.json') continue;
+            if (filename === 'fields.md') continue;
 
             const localPath = path.join(formFolderPath, filename);
             try {
@@ -287,7 +343,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             for (const [filename, remoteContent] of Object.entries(codes)) {
               const localPath = path.join(formFolderPath, filename);
 
-              if (filename === 'fields.json') {
+              if (filename === 'fields.md') {
+                fileService.deleteFileIfExists(path.join(formFolderPath, 'fields.json'));
                 fileService.saveFile(localPath, remoteContent);
               } else {
                 const finalContent = await handleFileConflict(
@@ -327,15 +384,16 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.appCode,
           config.appName,
           config.appSuffix || '',
-          config.h3Token,
           updatedFormsRecord
         );
         fileService.updateLastSyncTime(appFolderPath);
+        fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
 
         progress.report({ message: '完成!', increment: 100 });
 
         // 显示同步结果
         const summary = `同步完成! 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}`;
+        syncSummary = summary;
         
         if (failCount === 0) {
           vscode.window.showInformationMessage(summary);
@@ -349,4 +407,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
       }
     }
   );
+
+  if (syncSummary) {
+    await promptAndCommit(appFolderPath, syncSummary);
+  }
 }

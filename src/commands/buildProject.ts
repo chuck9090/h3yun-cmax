@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
+import { gitService } from '../services/gitService';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { CmaxFormEntry } from '../types';
 
@@ -28,6 +29,9 @@ export async function handleBuildProject(): Promise<void> {
 
   // 设置全局 Token
   h3yunApi.setToken(h3Token);
+
+  let builtAppFolderPath: string | undefined;
+  let buildSummary: string | undefined;
 
   // 显示进度条
   await vscode.window.withProgress(
@@ -70,6 +74,7 @@ export async function handleBuildProject(): Promise<void> {
           workspaceRoot,
           application.appName
         );
+        builtAppFolderPath = appFolderPath;
 
         const appFolderName = `${application.appName}(${appSuffix})`;
         vscode.window.showInformationMessage(`已创建应用文件夹: ${appFolderName}`);
@@ -80,7 +85,11 @@ export async function handleBuildProject(): Promise<void> {
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
-          fileService.createCmaxConfig(appFolderPath, appCode, application.appName, appSuffix, h3Token, {});
+          fileService.createCmaxConfig(appFolderPath, appCode, application.appName, appSuffix, {});
+          fileService.saveToken(appFolderPath, h3Token);
+          fileService.ensureGitIgnore(appFolderPath);
+          fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
+          buildSummary = '项目构建成功! 该应用下没有表单';
           return;
         }
 
@@ -119,13 +128,14 @@ export async function handleBuildProject(): Promise<void> {
 
         // Step 5: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 95 });
-        fileService.createCmaxConfig(appFolderPath, appCode, application.appName, appSuffix, h3Token, formsRecord);
+        fileService.createCmaxConfig(appFolderPath, appCode, application.appName, appSuffix, formsRecord);
+        fileService.saveToken(appFolderPath, h3Token);
+        fileService.ensureGitIgnore(appFolderPath);
+        fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
 
         progress.report({ message: '完成!', increment: 100 });
 
-        vscode.window.showInformationMessage(
-          `项目构建成功! 共处理 ${Object.keys(formsRecord).length}/${totalForms} 个表单`
-        );
+        buildSummary = `项目构建成功! 共处理 ${Object.keys(formsRecord).length}/${totalForms} 个表单`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`构建项目失败: ${errorMessage}`);
@@ -133,4 +143,41 @@ export async function handleBuildProject(): Promise<void> {
       }
     }
   );
+
+  if (!builtAppFolderPath || !buildSummary) {
+    return;
+  }
+
+  const gitAction = await vscode.window.showInformationMessage(
+    `${buildSummary}\n\n是否要自动完成 git init 并提交项目文件?`,
+    { modal: true },
+    '初始化并提交',
+    '跳过'
+  );
+
+  if (gitAction !== '初始化并提交') {
+    vscode.window.showInformationMessage(buildSummary);
+    return;
+  }
+
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: '正在初始化 Git 仓库并提交项目文件',
+        cancellable: false
+      },
+      async (progress) => {
+        progress.report({ message: '正在执行 git init、git add 和 git commit...' });
+        await gitService.initAndCommit(builtAppFolderPath!, '初始化氚云项目');
+      }
+    );
+
+    vscode.window.showInformationMessage(`${buildSummary}\nGit 仓库已初始化并完成首次提交`);
+  } catch (error) {
+    vscode.window.showWarningMessage(
+      `${buildSummary}\nGit 初始化或提交失败: ${error instanceof Error ? error.message : String(error)}`,
+      { modal: true }
+    );
+  }
 }

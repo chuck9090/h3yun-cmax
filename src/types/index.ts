@@ -34,7 +34,6 @@ export interface CmaxConfig {
   appCode: string;                      // 应用编码
   appName: string;                      // 应用名称
   appSuffix?: string;                   // 应用文件夹随机后缀 (a+5位)
-  h3Token: string;                      // 氚云认证 Token
   forms: Record<string, CmaxFormEntry>; // 表单配置, key 为随机后缀 (f+5位)
   lastSyncTime?: string;                // 最后同步时间
 }
@@ -66,7 +65,7 @@ export type ProgressCallback = (message: string, progress: number) => void;
  * 文件内容映射
  */
 export interface FileContentMap {
-  'fields.json': string;
+  'fields.md': string;
   'form-frontend.ts': string;
   'form-backend.cs': string;
   'list-frontend.ts': string;

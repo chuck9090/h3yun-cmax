@@ -2,22 +2,40 @@ import { get, post, parseJsonResponse } from '../utils/httpUtils';
 import {
   H3Application,
   H3Form,
-  H3FormField,
-  ApiResponse,
   FileContentMap
 } from '../types';
+import { parseApplication, FunctionNodeAppListResponse } from '../parsers/appListParser';
+import { parseFunctionNodes, FunctionNodeChildrenResponse } from '../parsers/functionNodeChildrenParser';
+import {
+  hasFormSchema,
+  parseSchemaJSON,
+  SheetDesignerLoadFormResponse
+} from '../parsers/sheetDesignerParser';
+import { H3FunctionNode } from '../parsers/functionNodeTypes';
+import {
+  FormCustomCode,
+  LoadCustomCodeResponse,
+  parseFormCustomCode
+} from '../parsers/customCodeParser';
+import {
+  ListViewCode,
+  ListViewDesignerLoadResponse,
+  parseListViewCode
+} from '../parsers/listViewDesignerParser';
 
 /**
  * 氚云 API 基础配置
- * TODO: 根据实际平台配置修改这些值
  */
-const API_BASE_URL = 'https://api.h3yun.com'; // 占位符,待用户提供实际地址
-const API_TIMEOUT = 30000; // 30秒超时
+const API_BASE_URL = 'https://www.h3yun.com';
 
 /**
  * 全局 Token 存储
  */
 let globalToken: string = '';
+const loadFormCache = new Map<string, SheetDesignerLoadFormResponse>();
+const customCodeCache = new Map<string, FormCustomCode>();
+const listViewCodeCache = new Map<string, ListViewCode>();
+const loadFormFailures: Array<{ code: string; name: string; error: string }> = [];
 
 /**
  * 设置认证 Token
@@ -25,6 +43,10 @@ let globalToken: string = '';
  */
 export function setToken(token: string): void {
   globalToken = token;
+  loadFormCache.clear();
+  customCodeCache.clear();
+  listViewCodeCache.clear();
+  loadFormFailures.length = 0;
 }
 
 /**
@@ -32,7 +54,8 @@ export function setToken(token: string): void {
  */
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
+    'Accept': 'application/json',
+    'Content-Type': 'application/json;charset=UTF-8'
   };
 
   // 如果设置了 Token,添加到请求头
@@ -54,6 +77,14 @@ function buildUrl(endpoint: string): string {
   return `${API_BASE_URL}${endpoint}`;
 }
 
+function ensureSuccessfulStatus(statusCode: number, action: string): void {
+  if (statusCode >= 200 && statusCode < 300) {
+    return;
+  }
+
+  throw new Error(`${action}失败: HTTP ${statusCode}`);
+}
+
 /**
  * 氚云 API 服务类
  */
@@ -64,6 +95,19 @@ export class H3YunApiService {
    */
   setToken(token: string): void {
     globalToken = token;
+    loadFormCache.clear();
+    customCodeCache.clear();
+    listViewCodeCache.clear();
+    loadFormFailures.length = 0;
+  }
+
+  /**
+   * 获取并清空 LoadForm 请求失败节点
+   */
+  consumeLoadFormFailures(): Array<{ code: string; name: string; error: string }> {
+    const failures = [...loadFormFailures];
+    loadFormFailures.length = 0;
+    return failures;
   }
 
   /**
@@ -72,16 +116,8 @@ export class H3YunApiService {
    * @returns 应用信息
    */
   async getApplication(appCode: string): Promise<H3Application> {
-    const url = buildUrl(`/api/applications/${appCode}`);
-    const headers = getAuthHeaders();
-
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<H3Application>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取应用信息失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data!;
+      return await this.getApplicationFromList(appCode);
     } catch (error) {
       throw new Error(`获取应用信息失败: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -93,40 +129,102 @@ export class H3YunApiService {
    * @returns 表单列表
    */
   async getForms(appCode: string): Promise<H3Form[]> {
-    const url = buildUrl(`/api/applications/${appCode}/forms`);
-    const headers = getAuthHeaders();
-
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<H3Form[]>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取表单列表失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data!;
+      const nodes = await this.getFunctionNodes(appCode);
+      const formEntries: Array<H3Form | null> = await Promise.all(nodes.map(async (node) => {
+        let loadFormResponse: SheetDesignerLoadFormResponse;
+
+        try {
+          loadFormResponse = await this.loadFormDesign(node.code);
+        } catch (error) {
+          loadFormFailures.push({
+            code: node.code,
+            name: node.displayName,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          return null;
+        }
+
+        if (!hasFormSchema(loadFormResponse)) {
+          return null;
+        }
+
+        return {
+          formCode: node.code,
+          formName: node.displayName,
+          description: node.summary || undefined
+        };
+      }));
+
+      return formEntries.filter((entry): entry is H3Form => entry !== null);
     } catch (error) {
       throw new Error(`获取表单列表失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
+  private async getFunctionNodes(appCode: string): Promise<H3FunctionNode[]> {
+    const url = buildUrl('/v1/functionnode/children');
+    const headers = getAuthHeaders();
+    const body = JSON.stringify({
+      parentCode: appCode,
+      checkHasChild: false
+    });
+
+    const response = await post(url, body, headers);
+    ensureSuccessfulStatus(response.statusCode, '获取应用节点');
+    const apiResponse = parseJsonResponse<FunctionNodeChildrenResponse>(response);
+    return parseFunctionNodes(apiResponse);
+  }
+
+  private async getApplicationFromList(appCode: string): Promise<H3Application> {
+    const url = buildUrl('/v1/functionnode/app/list');
+    const headers = getAuthHeaders();
+    const response = await get(url, headers);
+
+    ensureSuccessfulStatus(response.statusCode, '获取应用列表');
+    const apiResponse = parseJsonResponse<FunctionNodeAppListResponse>(response);
+    return parseApplication(apiResponse, appCode);
+  }
+
   /**
    * 获取表单字段表
    * @param formCode 表单编码
-   * @returns 字段列表
+   * @returns 字段表文本
    */
-  async getFormFields(formCode: string): Promise<H3FormField[]> {
-    const url = buildUrl(`/api/forms/${formCode}/fields`);
-    const headers = getAuthHeaders();
-
+  async getFormFields(formCode: string): Promise<string> {
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<H3FormField[]>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取表单字段失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data!;
+      const apiResponse = await this.loadFormDesign(formCode);
+      return parseSchemaJSON(apiResponse);
     } catch (error) {
       throw new Error(`获取表单字段失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async loadFormDesign(formCode: string): Promise<SheetDesignerLoadFormResponse> {
+    const cachedResponse = loadFormCache.get(formCode);
+
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    const url = buildUrl('/Console/SheetDesigner/OnAction');
+    const headers = {
+      ...getAuthHeaders(),
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    };
+    const postData = JSON.stringify({
+      ActionName: 'LoadForm',
+      id: formCode
+    });
+    const body = `PostData=${encodeURIComponent(postData)}`;
+    const response = await post(url, body, headers);
+
+    ensureSuccessfulStatus(response.statusCode, '获取表单字段');
+    const apiResponse = parseJsonResponse<SheetDesignerLoadFormResponse>(response);
+    loadFormCache.set(formCode, apiResponse);
+
+    return apiResponse;
   }
 
   /**
@@ -135,16 +233,9 @@ export class H3YunApiService {
    * @returns 前端代码内容
    */
   async getFormFrontendCode(formCode: string): Promise<string> {
-    const url = buildUrl(`/api/forms/${formCode}/frontend-code`);
-    const headers = getAuthHeaders();
-
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<{ code: string }>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取表单前端代码失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data?.code || '';
+      const customCode = await this.loadCustomCode(formCode);
+      return customCode.formFrontendCode;
     } catch (error) {
       console.warn(`获取表单前端代码失败: ${error instanceof Error ? error.message : String(error)}`);
       return '';
@@ -157,16 +248,9 @@ export class H3YunApiService {
    * @returns 后端代码内容
    */
   async getFormBackendCode(formCode: string): Promise<string> {
-    const url = buildUrl(`/api/forms/${formCode}/backend-code`);
-    const headers = getAuthHeaders();
-
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<{ code: string }>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取表单后端代码失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data?.code || '';
+      const customCode = await this.loadCustomCode(formCode);
+      return customCode.formBackendCode;
     } catch (error) {
       console.warn(`获取表单后端代码失败: ${error instanceof Error ? error.message : String(error)}`);
       return '';
@@ -179,20 +263,42 @@ export class H3YunApiService {
    * @returns 列表前端代码内容
    */
   async getListFrontendCode(formCode: string): Promise<string> {
-    const url = buildUrl(`/api/forms/${formCode}/list-frontend-code`);
-    const headers = getAuthHeaders();
-
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<{ code: string }>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取列表前端代码失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data?.code || '';
+      const listViewCode = await this.loadListViewCode(formCode);
+      return listViewCode.listFrontendCode;
     } catch (error) {
       console.warn(`获取列表前端代码失败: ${error instanceof Error ? error.message : String(error)}`);
       return '';
     }
+  }
+
+  private async loadCustomCode(formCode: string): Promise<FormCustomCode> {
+    const cachedCode = customCodeCache.get(formCode);
+
+    if (cachedCode) {
+      return cachedCode;
+    }
+
+    const url = buildUrl('/Console/SheetDesigner/OnAction');
+    const headers = {
+      ...getAuthHeaders(),
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'SchemaCode': formCode
+    };
+    const postData = JSON.stringify({
+      ActionName: 'LoadCustomCode',
+      SchemaCode: formCode
+    });
+    const body = `PostData=${encodeURIComponent(postData)}`;
+    const response = await post(url, body, headers);
+
+    ensureSuccessfulStatus(response.statusCode, '获取表单自定义代码');
+    const apiResponse = parseJsonResponse<LoadCustomCodeResponse>(response);
+    const customCode = parseFormCustomCode(apiResponse);
+    customCodeCache.set(formCode, customCode);
+
+    return customCode;
   }
 
   /**
@@ -201,20 +307,41 @@ export class H3YunApiService {
    * @returns 列表后端代码内容
    */
   async getListBackendCode(formCode: string): Promise<string> {
-    const url = buildUrl(`/api/forms/${formCode}/list-backend-code`);
-    const headers = getAuthHeaders();
-
     try {
-      const response = await get(url, headers);
-      const apiResponse = parseJsonResponse<ApiResponse<{ code: string }>>(response);
-      if (!apiResponse.success) {
-        throw new Error(`获取列表后端代码失败: ${apiResponse.errorMessage || '未知错误'}`);
-      }
-      return apiResponse.data?.code || '';
+      const listViewCode = await this.loadListViewCode(formCode);
+      return listViewCode.listBackendCode;
     } catch (error) {
       console.warn(`获取列表后端代码失败: ${error instanceof Error ? error.message : String(error)}`);
       return '';
     }
+  }
+
+  private async loadListViewCode(formCode: string): Promise<ListViewCode> {
+    const cachedCode = listViewCodeCache.get(formCode);
+
+    if (cachedCode) {
+      return cachedCode;
+    }
+
+    const url = buildUrl('/ListViewDesigner/OnAction');
+    const headers = {
+      ...getAuthHeaders(),
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    };
+    const postData = JSON.stringify({
+      ActionName: 'Load',
+      id: formCode
+    });
+    const body = `PostData=${encodeURIComponent(postData)}`;
+    const response = await post(url, body, headers);
+
+    ensureSuccessfulStatus(response.statusCode, '获取列表代码');
+    const apiResponse = parseJsonResponse<ListViewDesignerLoadResponse>(response);
+    const listViewCode = parseListViewCode(apiResponse);
+    listViewCodeCache.set(formCode, listViewCode);
+
+    return listViewCode;
   }
 
   /**
@@ -232,7 +359,7 @@ export class H3YunApiService {
     ]);
 
     return {
-      'fields.json': JSON.stringify(fields, null, 2),
+      'fields.md': fields,
       'form-frontend.ts': formFrontend,
       'form-backend.cs': formBackend,
       'list-frontend.ts': listFrontend,

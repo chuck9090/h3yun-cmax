@@ -3,6 +3,15 @@ import * as path from 'path';
 import { folderExists, createFolder, generateUniqueSuffix, buildFolderName } from '../utils/folderUtils';
 import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
 
+const CMAX_CONFIG_FILENAME = 'cmax.json';
+const H3_TOKEN_FILENAME = '.h3token';
+const GITIGNORE_FILENAME = '.gitignore';
+const FAILED_NODES_REPORT_FILENAME = 'failed-nodes.md';
+
+interface LegacyCmaxConfig extends CmaxConfig {
+  h3Token?: string;
+}
+
 /**
  * 文件管理服务类
  */
@@ -92,10 +101,55 @@ export class FileService {
   saveFormCodes(formFolderPath: string, codes: FileContentMap): void {
     for (const [filename, content] of Object.entries(codes)) {
       if (content) { // 只保存非空内容
+        if (filename === 'fields.md') {
+          this.deleteFileIfExists(path.join(formFolderPath, 'fields.json'));
+        }
+
         const filePath = path.join(formFolderPath, filename);
         this.saveFile(filePath, content);
       }
     }
+  }
+
+  /**
+   * 删除文件(如果存在)
+   * @param filePath 文件完整路径
+   */
+  deleteFileIfExists(filePath: string): void {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
+
+  /**
+   * 保存节点获取失败报告
+   * @param appFolderPath 应用文件夹路径
+   * @param failures 失败节点列表
+   */
+  saveFailedNodesReport(
+    appFolderPath: string,
+    failures: Array<{ code: string; name: string; error: string }>
+  ): void {
+    const reportPath = path.join(appFolderPath, FAILED_NODES_REPORT_FILENAME);
+
+    if (failures.length === 0) {
+      if (fs.existsSync(reportPath)) {
+        fs.unlinkSync(reportPath);
+      }
+      return;
+    }
+
+    let content = '# 节点获取失败报告\n\n';
+    content += `生成时间: ${new Date().toISOString()}\n\n`;
+    content += '以下节点在判断是否为表单时发生请求级别失败,未参与本次构建或同步。\n\n';
+
+    failures.forEach((failure, index) => {
+      content += `## ${index + 1}. ${failure.name}\n\n`;
+      content += `- 节点编码: ${failure.code}\n`;
+      content += `- 失败原因: ${failure.error}\n\n`;
+    });
+
+    this.saveFile(reportPath, content);
   }
 
   /**
@@ -104,7 +158,6 @@ export class FileService {
    * @param appCode 应用编码
    * @param appName 应用名称
    * @param appSuffix 应用文件夹随机后缀
-   * @param h3Token 氚云认证 Token
    * @param forms 表单配置记录, key 为随机后缀
    */
   createCmaxConfig(
@@ -112,20 +165,87 @@ export class FileService {
     appCode: string,
     appName: string,
     appSuffix: string,
-    h3Token: string,
     forms: Record<string, CmaxFormEntry>
   ): void {
     const config: CmaxConfig = {
       appCode,
       appName,
       appSuffix,
-      h3Token,
       forms,
       lastSyncTime: new Date().toISOString()
     };
 
-    const configPath = path.join(appFolderPath, 'cmax.json');
+    const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);
     this.saveFile(configPath, JSON.stringify(config, null, 2));
+  }
+
+  /**
+   * 保存氚云认证 Token
+   * @param appFolderPath 应用文件夹路径
+   * @param token 氚云认证 Token
+   */
+  saveToken(appFolderPath: string, token: string): void {
+    const tokenPath = path.join(appFolderPath, H3_TOKEN_FILENAME);
+    this.saveFile(tokenPath, `${token.trim()}\n`);
+  }
+
+  /**
+   * 读取氚云认证 Token
+   * @param appFolderPath 应用文件夹路径
+   * @returns 氚云认证 Token
+   */
+  readToken(appFolderPath: string): string {
+    const tokenPath = path.join(appFolderPath, H3_TOKEN_FILENAME);
+
+    if (!fs.existsSync(tokenPath)) {
+      return this.migrateLegacyToken(appFolderPath);
+    }
+
+    const token = this.readFile(tokenPath).trim();
+
+    if (!token) {
+      throw new Error(`${H3_TOKEN_FILENAME} 内容为空`);
+    }
+
+    return token;
+  }
+
+  private migrateLegacyToken(appFolderPath: string): string {
+    const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);
+    const config = this.readJsonFile<LegacyCmaxConfig>(configPath);
+    const token = config.h3Token?.trim();
+
+    if (!token) {
+      throw new Error(`缺少 ${H3_TOKEN_FILENAME},请重新构建项目或重新输入 Token`);
+    }
+
+    delete config.h3Token;
+    this.saveToken(appFolderPath, token);
+    this.ensureGitIgnore(appFolderPath);
+    this.saveFile(configPath, JSON.stringify(config, null, 2));
+
+    return token;
+  }
+
+  /**
+   * 创建或更新 .gitignore,忽略本地 Token 文件
+   * @param appFolderPath 应用文件夹路径
+   */
+  ensureGitIgnore(appFolderPath: string): void {
+    const gitIgnorePath = path.join(appFolderPath, GITIGNORE_FILENAME);
+    const existingContent = fs.existsSync(gitIgnorePath)
+      ? fs.readFileSync(gitIgnorePath, 'utf-8')
+      : '';
+    const entries = existingContent
+      .split(/\r?\n/)
+      .map((line) => line.trim());
+
+    if (entries.includes(H3_TOKEN_FILENAME)) {
+      return;
+    }
+
+    const prefix = existingContent && !existingContent.endsWith('\n') ? '\n' : '';
+    this.saveFile(gitIgnorePath, `${existingContent}${prefix}${H3_TOKEN_FILENAME}\n`);
   }
 
   /**
@@ -134,7 +254,7 @@ export class FileService {
    * @returns 配置对象
    */
   readCmaxConfig(appFolderPath: string): CmaxConfig {
-    const configPath = path.join(appFolderPath, 'cmax.json');
+    const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);
     return this.readJsonFile<CmaxConfig>(configPath);
   }
 
@@ -153,20 +273,8 @@ export class FileService {
    * @returns 是否包含配置文件
    */
   hasCmaxConfig(folderPath: string): boolean {
-    const configPath = path.join(folderPath, 'cmax.json');
+    const configPath = path.join(folderPath, CMAX_CONFIG_FILENAME);
     return fs.existsSync(configPath);
-  }
-
-  /**
-   * 仅更新 cmax.json 中的 Token
-   * @param appFolderPath 应用文件夹路径
-   * @param token 新的 Token 值
-   */
-  updateToken(appFolderPath: string, token: string): void {
-    const config = this.readCmaxConfig(appFolderPath);
-    config.h3Token = token;
-    const configPath = path.join(appFolderPath, 'cmax.json');
-    this.saveFile(configPath, JSON.stringify(config, null, 2));
   }
 
   /**
@@ -177,7 +285,7 @@ export class FileService {
     try {
       const config = this.readCmaxConfig(appFolderPath);
       config.lastSyncTime = new Date().toISOString();
-      const configPath = path.join(appFolderPath, 'cmax.json');
+      const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);
       this.saveFile(configPath, JSON.stringify(config, null, 2));
     } catch (error) {
       console.warn('更新同步时间失败:', error);
