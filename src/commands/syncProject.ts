@@ -3,7 +3,7 @@ import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
-import { CmaxFormEntry, FileContentMap } from '../types';
+import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
 import { buildFolderName } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { 
@@ -150,6 +150,19 @@ function findFormByCode(
   return undefined;
 }
 
+async function syncAppFolderName(appFolderPath: string, config: CmaxConfig): Promise<string> {
+  const latestApplication = await h3yunApi.getApplication(config.appCode);
+
+  if (config.appSuffix && latestApplication.appName !== config.appName) {
+    const renamedFolderPath = fileService.renameFolderWithSuffix(appFolderPath, latestApplication.appName, config.appSuffix);
+    config.appName = latestApplication.appName;
+    return renamedFolderPath;
+  }
+
+  config.appName = latestApplication.appName;
+  return appFolderPath;
+}
+
 /**
  * 同步项目命令处理器
  * @param uri 选中的文件夹 URI(从右键菜单传入)
@@ -208,6 +221,12 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   // 设置 Token
   h3yunApi.setToken(h3Token);
 
+  try {
+    appFolderPath = await syncAppFolderName(appFolderPath, config);
+  } catch (error) {
+    vscode.window.showWarningMessage(`获取或更新应用名称失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   // 显示进度条
   await vscode.window.withProgress(
     {
@@ -247,8 +266,17 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           }
         }
 
+        appFolderPath = await syncAppFolderName(appFolderPath, config);
+
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
+          fileService.createCmaxConfig(
+            appFolderPath,
+            config.appCode,
+            config.appName,
+            config.appSuffix || '',
+            config.forms
+          );
           fileService.updateLastSyncTime(appFolderPath);
           fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
           syncSummary = '同步完成! 该应用下没有表单';
@@ -257,6 +285,18 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         // Step 2: 预先检测所有冲突
         progress.report({ message: '正在检测文件差异...', increment: 10 });
+
+        for (const form of forms) {
+          const existingEntry = findFormByCode(config.forms, form.formCode);
+          if (!existingEntry || existingEntry.entry.formName === form.formName) continue;
+
+          const currentFormFolderPath = path.join(
+            appFolderPath,
+            buildFolderName(existingEntry.entry.formName, existingEntry.suffix)
+          );
+          fileService.renameFolderWithSuffix(currentFormFolderPath, form.formName, existingEntry.suffix);
+          existingEntry.entry.formName = form.formName;
+        }
         
         // 首先获取所有表单的代码以便检测冲突
         const formCodesMap = new Map<string, FileContentMap>();

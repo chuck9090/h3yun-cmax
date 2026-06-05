@@ -122,6 +122,33 @@ export class FileService {
   }
 
   /**
+   * 使用同一个随机后缀重命名文件夹
+   * @param currentFolderPath 当前文件夹路径
+   * @param newName 新显示名称
+   * @param suffix 随机后缀
+   * @returns 重命名后的文件夹路径
+   */
+  renameFolderWithSuffix(currentFolderPath: string, newName: string, suffix: string): string {
+    const parentPath = path.dirname(currentFolderPath);
+    const targetFolderPath = path.join(parentPath, buildFolderName(newName, suffix));
+
+    if (currentFolderPath === targetFolderPath) {
+      return currentFolderPath;
+    }
+
+    if (!fs.existsSync(currentFolderPath)) {
+      throw new Error(`待重命名文件夹不存在: ${currentFolderPath}`);
+    }
+
+    if (fs.existsSync(targetFolderPath)) {
+      throw new Error(`目标文件夹已存在: ${targetFolderPath}`);
+    }
+
+    fs.renameSync(currentFolderPath, targetFolderPath);
+    return targetFolderPath;
+  }
+
+  /**
    * 保存节点获取失败报告
    * @param appFolderPath 应用文件夹路径
    * @param failures 失败节点列表
