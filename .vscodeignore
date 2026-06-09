@@ -1,4 +1,5 @@
 .vscode/**
+.github/**
 .opencode/**
 src/**
 tsconfig.json
