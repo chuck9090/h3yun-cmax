@@ -126,7 +126,7 @@
 - 同步时会直接用远程版本覆盖本地文件
 - 无需用户确认
 
-### 代码文件 (form-frontend.ts, form-backend.cs 等)
+### 代码文件 (form-frontend.js, form-backend.cs 等)
 
 **策略**: 差异检测 + 用户选择
 
@@ -197,9 +197,9 @@
 ├── failed-nodes.md              # 节点获取失败报告(仅有失败时生成)
 ├── 表单1名称(fxxxxx)/
 │   ├── fields.md                # 表单字段表
-│   ├── form-frontend.ts         # 表单前端代码
+│   ├── form-frontend.js         # 表单前端代码
 │   ├── form-backend.cs          # 表单后端代码
-│   ├── list-frontend.ts         # 列表前端代码
+│   ├── list-frontend.js         # 列表前端代码
 │   └── list-backend.cs          # 列表后端代码
 ├── 表单2名称(fxxxxx)/
 │   └── ... (同上)

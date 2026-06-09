@@ -360,9 +360,9 @@ export class H3YunApiService {
 
     return {
       'fields.md': fields,
-      'form-frontend.ts': formFrontend,
+      'form-frontend.js': formFrontend,
       'form-backend.cs': formBackend,
-      'list-frontend.ts': listFrontend,
+      'list-frontend.js': listFrontend,
       'list-backend.cs': listBackend
     };
   }

@@ -6,8 +6,8 @@ import { gitService } from '../services/gitService';
 import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
 import { buildFolderName } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
+import { showDiffPreview } from '../ui/diffPreview';
 import { 
-  showConflictDialog, 
   showBatchConflictDialog, 
   ConflictResolution, 
   BatchConflictResolution,
@@ -82,6 +82,7 @@ async function promptAndCommit(appFolderPath: string, summary: string): Promise<
  * 处理单个文件的冲突
  * @param localPath 本地文件路径
  * @param remoteContent 远程内容
+ * @param formName 表单名称
  * @param filename 文件名
  * @param batchResolution 批量解决方案(如果有)
  * @returns 最终使用的内容,null 表示跳过
@@ -89,6 +90,7 @@ async function promptAndCommit(appFolderPath: string, summary: string): Promise<
 async function handleFileConflict(
   localPath: string,
   remoteContent: string,
+  formName: string,
   filename: string,
   batchResolution: BatchConflictResolution | null
 ): Promise<string | null> {
@@ -119,12 +121,17 @@ async function handleFileConflict(
   // 逐个询问
   const diffReport = generateDiffReport(localContent, remoteContent, filename);
   const conflict: FileConflict = {
+    formName,
     filename,
     localPath,
     diffReport
   };
 
-  const resolution = await showConflictDialog(conflict);
+  const resolution = await showDiffPreview({
+    ...conflict,
+    localContent,
+    remoteContent
+  });
 
   if (resolution === ConflictResolution.USE_LOCAL || resolution === null) {
     return null; // 使用本地版本或取消
@@ -390,6 +397,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
                 const finalContent = await handleFileConflict(
                   localPath,
                   remoteContent,
+                  form.formName,
                   filename,
                   batchResolution
                 );

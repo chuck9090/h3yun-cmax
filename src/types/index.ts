@@ -66,8 +66,8 @@ export type ProgressCallback = (message: string, progress: number) => void;
  */
 export interface FileContentMap {
   'fields.md': string;
-  'form-frontend.ts': string;
+  'form-frontend.js': string;
   'form-backend.cs': string;
-  'list-frontend.ts': string;
+  'list-frontend.js': string;
   'list-backend.cs': string;
 }
