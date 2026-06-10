@@ -100,14 +100,12 @@ export class FileService {
    */
   saveFormCodes(formFolderPath: string, codes: FileContentMap): void {
     for (const [filename, content] of Object.entries(codes)) {
-      if (content) { // 只保存非空内容
-        if (filename === 'fields.md') {
-          this.deleteFileIfExists(path.join(formFolderPath, 'fields.json'));
-        }
-
-        const filePath = path.join(formFolderPath, filename);
-        this.saveFile(filePath, content);
+      if (filename === 'fields.md') {
+        this.deleteFileIfExists(path.join(formFolderPath, 'fields.json'));
       }
+
+      const filePath = path.join(formFolderPath, filename);
+      this.saveFile(filePath, content);
     }
   }
 

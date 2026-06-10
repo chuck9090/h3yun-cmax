@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { get, post, parseJsonResponse } from '../utils/httpUtils';
 import {
   H3Application,
@@ -36,6 +38,34 @@ const loadFormCache = new Map<string, SheetDesignerLoadFormResponse>();
 const customCodeCache = new Map<string, FormCustomCode>();
 const listViewCodeCache = new Map<string, ListViewCode>();
 const loadFormFailures: Array<{ code: string; name: string; error: string }> = [];
+
+function readDefaultCode(filename: keyof Omit<FileContentMap, 'fields.md'>): string {
+  const defaultCodePath = path.resolve(__dirname, '..', 'default-code', filename);
+
+  if (!fs.existsSync(defaultCodePath)) {
+    return '';
+  }
+
+  return fs.readFileSync(defaultCodePath, 'utf-8');
+}
+
+function useDefaultCodeIfEmpty(
+  filename: keyof Omit<FileContentMap, 'fields.md'>,
+  content: string,
+  formCode: string
+): string {
+  if (content.trim().length > 0) {
+    return content;
+  }
+
+  const defaultCode = readDefaultCode(filename);
+
+  if (filename === 'form-backend.cs' || filename === 'list-backend.cs') {
+    return defaultCode.replace(/\{SchemaCode\}/g, formCode);
+  }
+
+  return defaultCode;
+}
 
 /**
  * 设置认证 Token
@@ -360,10 +390,10 @@ export class H3YunApiService {
 
     return {
       'fields.md': fields,
-      'form-frontend.js': formFrontend,
-      'form-backend.cs': formBackend,
-      'list-frontend.js': listFrontend,
-      'list-backend.cs': listBackend
+      'form-frontend.js': useDefaultCodeIfEmpty('form-frontend.js', formFrontend, formCode),
+      'form-backend.cs': useDefaultCodeIfEmpty('form-backend.cs', formBackend, formCode),
+      'list-frontend.js': useDefaultCodeIfEmpty('list-frontend.js', listFrontend, formCode),
+      'list-backend.cs': useDefaultCodeIfEmpty('list-backend.cs', listBackend, formCode)
     };
   }
 }

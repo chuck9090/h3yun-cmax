@@ -27,7 +27,7 @@ export function parseFormCustomCode(response: LoadCustomCodeResponse): FormCusto
   const returnData = response.ReturnData || {};
 
   return {
-    formFrontendCode: returnData.NewJsCode || returnData.DefaultNewJsCode || '',
-    formBackendCode: returnData.CsCode || returnData.DefaultCsCode || ''
+    formFrontendCode: returnData.NewJsCode || '',
+    formBackendCode: returnData.CsCode || ''
   };
 }
