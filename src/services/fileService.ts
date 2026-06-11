@@ -7,6 +7,25 @@ const CMAX_CONFIG_FILENAME = 'cmax.json';
 const H3_TOKEN_FILENAME = '.h3token';
 const GITIGNORE_FILENAME = '.gitignore';
 const FAILED_NODES_REPORT_FILENAME = 'failed-nodes.md';
+const GITIGNORE_ENTRIES = [
+  H3_TOKEN_FILENAME,
+  '.opencode/',
+  '.lingma/',
+  '.cursor/',
+  '.windsurf/',
+  '.continue/',
+  '.claude/',
+  '.gemini/',
+  '.codex/',
+  '.qwen/',
+  '.qoder/',
+  '.trae/',
+  '.roo/',
+  '.cline/',
+  '.kilocode/',
+  '.augment/',
+  '.tabnine/'
+];
 
 interface LegacyCmaxConfig extends CmaxConfig {
   h3Token?: string;
@@ -253,7 +272,7 @@ export class FileService {
   }
 
   /**
-   * 创建或更新 .gitignore,忽略本地 Token 文件
+   * 创建或更新 .gitignore,写入需要忽略的本地文件
    * @param appFolderPath 应用文件夹路径
    */
   ensureGitIgnore(appFolderPath: string): void {
@@ -264,13 +283,14 @@ export class FileService {
     const entries = existingContent
       .split(/\r?\n/)
       .map((line) => line.trim());
+    const missingEntries = GITIGNORE_ENTRIES.filter((entry) => !entries.includes(entry));
 
-    if (entries.includes(H3_TOKEN_FILENAME)) {
+    if (missingEntries.length === 0) {
       return;
     }
 
     const prefix = existingContent && !existingContent.endsWith('\n') ? '\n' : '';
-    this.saveFile(gitIgnorePath, `${existingContent}${prefix}${H3_TOKEN_FILENAME}\n`);
+    this.saveFile(gitIgnorePath, `${existingContent}${prefix}${missingEntries.join('\n')}\n`);
   }
 
   /**
