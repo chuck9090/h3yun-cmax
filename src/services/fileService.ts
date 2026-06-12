@@ -65,7 +65,7 @@ export class FileService {
    * @param filePath 文件完整路径
    * @returns 解析后的对象
    */
-  readJsonFile<T = any>(filePath: string): T {
+  readJsonFile<T = unknown>(filePath: string): T {
     const content = this.readFile(filePath);
     try {
       return JSON.parse(content) as T;
@@ -200,6 +200,7 @@ export class FileService {
    * 创建 cmax.json 配置文件
    * @param appFolderPath 应用文件夹路径
    * @param appCode 应用编码
+   * @param engineCode 企业引擎编码
    * @param appName 应用名称
    * @param appSuffix 应用文件夹随机后缀
    * @param forms 表单配置记录, key 为随机后缀
@@ -207,12 +208,14 @@ export class FileService {
   createCmaxConfig(
     appFolderPath: string,
     appCode: string,
+    engineCode: string,
     appName: string,
     appSuffix: string,
     forms: Record<string, CmaxFormEntry>
   ): void {
     const config: CmaxConfig = {
       appCode,
+      engineCode,
       appName,
       appSuffix,
       forms,

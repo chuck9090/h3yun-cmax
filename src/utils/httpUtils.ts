@@ -32,7 +32,7 @@ export function sendRequest(url: string, options: HttpRequestOptions = {}): Prom
     const parsedUrl = new URL(url);
     const client = parsedUrl.protocol === 'https:' ? https : http;
 
-    const requestOptions: any = {
+    const requestOptions: http.RequestOptions = {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port,
       path: parsedUrl.pathname + parsedUrl.search,
@@ -107,7 +107,7 @@ export function post(url: string, body: string, headers?: Record<string, string>
  * @param response HTTP 响应
  * @returns 解析后的 JSON 对象
  */
-export function parseJsonResponse<T = any>(response: HttpResponse): T {
+export function parseJsonResponse<T = unknown>(response: HttpResponse): T {
   try {
     return JSON.parse(response.body) as T;
   } catch (error) {

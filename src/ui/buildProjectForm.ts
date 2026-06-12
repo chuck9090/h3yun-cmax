@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { h3yunApi } from '../services/h3yunApi';
-import { fileService } from '../services/fileService';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -9,18 +8,29 @@ import * as fs from 'fs';
  */
 interface BuildInputData {
   appCode: string;
+  engineCode: string;
   h3Token: string;
+}
+
+interface BuildProjectFormOptions {
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  appCode?: string;
+  engineCode?: string;
+  appCodeReadonly?: boolean;
+  engineCodeReadonly?: boolean;
 }
 
 /**
  * 显示构建项目输入表单 Webview
  */
-export function showBuildProjectForm(): Promise<BuildInputData | null> {
+export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Promise<BuildInputData | null> {
   return new Promise((resolve) => {
     // 创建 WebView 面板
     const panel = vscode.window.createWebviewPanel(
       'h3yunBuildForm',
-      '从氚云构建项目',
+      options.title || '从氚云构建项目',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -29,16 +39,16 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
     );
 
     // 读取 HTML 模板
-    const htmlPath = path.join(__dirname, '..', 'assets', 'token-guide.html');
-    let tokenGuideHtml = '';
+    const parameterGuidePath = path.join(__dirname, '..', 'assets', 'token-guide.html');
+    let parameterGuideHtml = '';
     try {
-      tokenGuideHtml = fs.readFileSync(htmlPath, 'utf-8');
+      parameterGuideHtml = fs.readFileSync(parameterGuidePath, 'utf-8');
     } catch (error) {
-      console.error('Failed to read token guide HTML:', error);
+      console.error('Failed to read parameter guide HTML:', error);
     }
 
     // 设置 HTML 内容
-    panel.webview.html = getWebviewContent(tokenGuideHtml);
+    panel.webview.html = getWebviewContent(options);
 
     // 处理消息
     panel.webview.onDidReceiveMessage(async (message) => {
@@ -50,6 +60,15 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
               command: 'error', 
               field: 'appCode', 
               message: '应用编码不能为空' 
+            });
+            return;
+          }
+
+          if (!message.engineCode || !message.engineCode.trim()) {
+            panel.webview.postMessage({
+              command: 'error',
+              field: 'engineCode',
+              message: '企业引擎编码不能为空'
             });
             return;
           }
@@ -67,7 +86,7 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
           panel.webview.postMessage({ command: 'validating' });
           
           try {
-            h3yunApi.setToken(message.h3Token.trim());
+            h3yunApi.setToken(message.h3Token.trim(), message.engineCode.trim());
             
             // 尝试获取应用信息来验证 Token
             await h3yunApi.getApplication(message.appCode.trim());
@@ -75,6 +94,7 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
             // 验证成功,返回数据
             resolve({
               appCode: message.appCode.trim(),
+              engineCode: message.engineCode.trim(),
               h3Token: message.h3Token.trim()
             });
             
@@ -92,6 +112,9 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
             } else if (errorMsg.includes('404') || errorMsg.includes('不存在')) {
               errorMessage = '应用编码不存在,请检查后重试';
               errorField = 'appCode';
+            } else if (errorMsg.toLowerCase().includes('enginecode')) {
+              errorMessage = '企业引擎编码无效,请检查后重试';
+              errorField = 'engineCode';
             } else {
               errorMessage = `验证失败: ${errorMsg}`;
             }
@@ -109,17 +132,17 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
           panel.dispose();
           break;
           
-        case 'openTokenGuide':
-          // 在新标签页中打开 Token 获取指南
+        case 'openParameterGuide':
+          // 在新标签页中打开构建参数获取指南
           const guidePanel = vscode.window.createWebviewPanel(
-            'tokenGuide',
-            '如何获取 h3_token',
+            'parameterGuide',
+            '如何获取构建参数',
             vscode.ViewColumn.Beside,
             {
-              enableScripts: false
+              enableScripts: true
             }
           );
-          guidePanel.webview.html = tokenGuideHtml;
+          guidePanel.webview.html = parameterGuideHtml;
           break;
       }
     });
@@ -134,7 +157,23 @@ export function showBuildProjectForm(): Promise<BuildInputData | null> {
 /**
  * 获取 Webview HTML 内容
  */
-function getWebviewContent(tokenGuideHtml: string): string {
+function escapeAttribute(value: string | undefined): string {
+  return (value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getWebviewContent(options: BuildProjectFormOptions): string {
+  const title = escapeAttribute(options.title || '从氚云构建项目');
+  const description = escapeAttribute(options.description || '请输入应用编码、企业引擎编码和认证 Token');
+  const submitLabel = escapeAttribute(options.submitLabel || '开始构建');
+  const appCode = escapeAttribute(options.appCode);
+  const engineCode = escapeAttribute(options.engineCode);
+  const appCodeReadonly = options.appCodeReadonly ? 'readonly' : '';
+  const engineCodeReadonly = options.engineCodeReadonly ? 'readonly' : '';
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -213,6 +252,12 @@ function getWebviewContent(tokenGuideHtml: string): string {
         
         .form-input.error {
             border-color: #f44336;
+        }
+
+        .form-input[readonly] {
+            background: #f5f5f5;
+            color: #666;
+            cursor: not-allowed;
         }
         
         .error-message {
@@ -330,8 +375,8 @@ function getWebviewContent(tokenGuideHtml: string): string {
 <body>
     <div class="form-container">
         <div class="form-header">
-            <h1>🚀 从氚云构建项目</h1>
-            <p>请输入应用编码和认证 Token</p>
+            <h1>🚀 ${title}</h1>
+            <p>${description}</p>
         </div>
         
         <form id="buildForm">
@@ -344,9 +389,27 @@ function getWebviewContent(tokenGuideHtml: string): string {
                     id="appCode" 
                     class="form-input" 
                     placeholder="例如: APP001"
+                    value="${appCode}"
+                    ${appCodeReadonly}
                     autocomplete="off"
                 />
                 <div class="error-message" id="appCodeError"></div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    企业引擎编码 enginecode <span class="required">*</span>
+                </label>
+                <input 
+                    type="text" 
+                    id="engineCode" 
+                    class="form-input" 
+                    placeholder="系统管理 > 系统集成中的企业引擎编码"
+                    value="${engineCode}"
+                    ${engineCodeReadonly}
+                    autocomplete="off"
+                />
+                <div class="error-message" id="engineCodeError"></div>
             </div>
             
             <div class="form-group">
@@ -360,13 +423,14 @@ function getWebviewContent(tokenGuideHtml: string): string {
                     placeholder="从浏览器 Cookie 中复制的 h3_token 值"
                     autocomplete="off"
                 />
-                <a class="help-link" id="tokenHelpLink">📖 如何获取 h3_token?</a>
                 <div class="error-message" id="h3TokenError"></div>
             </div>
             
+            <a class="help-link" id="parameterHelpLink">📖 如何获取 AppCode、enginecode 和 h3_token?</a>
+            
             <div class="form-actions">
                 <button type="button" class="btn btn-secondary" id="cancelBtn">取消</button>
-                <button type="submit" class="btn btn-primary" id="submitBtn">开始构建</button>
+                <button type="submit" class="btn btn-primary" id="submitBtn">${submitLabel}</button>
             </div>
         </form>
     </div>
@@ -383,10 +447,11 @@ function getWebviewContent(tokenGuideHtml: string): string {
         
         const form = document.getElementById('buildForm');
         const appCodeInput = document.getElementById('appCode');
+        const engineCodeInput = document.getElementById('engineCode');
         const h3TokenInput = document.getElementById('h3Token');
         const submitBtn = document.getElementById('submitBtn');
         const cancelBtn = document.getElementById('cancelBtn');
-        const tokenHelpLink = document.getElementById('tokenHelpLink');
+        const parameterHelpLink = document.getElementById('parameterHelpLink');
         const loadingOverlay = document.getElementById('loadingOverlay');
         
         // 提交表单
@@ -400,6 +465,7 @@ function getWebviewContent(tokenGuideHtml: string): string {
             vscode.postMessage({
                 command: 'submit',
                 appCode: appCodeInput.value,
+                engineCode: engineCodeInput.value,
                 h3Token: h3TokenInput.value
             });
         });
@@ -409,9 +475,9 @@ function getWebviewContent(tokenGuideHtml: string): string {
             vscode.postMessage({ command: 'cancel' });
         });
         
-        // 查看 Token 获取指南
-        tokenHelpLink.addEventListener('click', () => {
-            vscode.postMessage({ command: 'openTokenGuide' });
+        // 查看构建参数获取指南
+        parameterHelpLink.addEventListener('click', () => {
+            vscode.postMessage({ command: 'openParameterGuide' });
         });
         
         // 接收来自扩展的消息

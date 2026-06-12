@@ -7,6 +7,7 @@ import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
 import { buildFolderName } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
+import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { 
   showBatchConflictDialog, 
   ConflictResolution, 
@@ -14,34 +15,70 @@ import {
   FileConflict 
 } from '../ui/conflictDialog';
 
+async function promptForTokenWithProjectInfo(config: CmaxConfig, message: string): Promise<string | undefined> {
+  const input = await showBuildProjectForm({
+    title: '重新输入 h3_token',
+    description: message,
+    submitLabel: '继续同步',
+    appCode: config.appCode,
+    engineCode: config.engineCode,
+    appCodeReadonly: true,
+    engineCodeReadonly: true
+  });
+
+  return input?.h3Token;
+}
+
 /**
- * 提示用户输入 Token
+ * 提示用户输入企业引擎编码
  */
-async function promptForToken(message: string): Promise<string | undefined> {
+async function promptForEngineCode(message: string): Promise<string | undefined> {
   const result = await vscode.window.showWarningMessage(
     message,
     { modal: true },
-    '输入 Token'
+    '输入企业引擎编码'
   );
 
-  if (result === '输入 Token') {
-    const token = await vscode.window.showInputBox({
-      prompt: '请输入氚云认证 Token (h3_token)',
-      placeHolder: '从浏览器 Cookie 中复制 h3_token 值',
-      password: true,
+  if (result === '输入企业引擎编码') {
+    const engineCode = await vscode.window.showInputBox({
+      prompt: '请输入氚云企业引擎编码 enginecode',
+      placeHolder: '系统管理 > 系统集成中的企业引擎编码',
       validateInput: (value) => {
         if (!value || value.trim().length === 0) {
-          return 'Token 不能为空';
+          return '企业引擎编码不能为空';
         }
         return null;
       },
       ignoreFocusOut: true
     });
 
-    return token?.trim();
+    return engineCode?.trim();
   }
 
   return undefined;
+}
+
+async function ensureEngineCode(config: CmaxConfig, appFolderPath: string): Promise<string | undefined> {
+  if (config.engineCode && config.engineCode.trim()) {
+    return config.engineCode.trim();
+  }
+
+  const engineCode = await promptForEngineCode('当前项目缺少企业引擎编码 enginecode,请补充后继续同步。');
+  if (!engineCode) {
+    return undefined;
+  }
+
+  config.engineCode = engineCode;
+  fileService.createCmaxConfig(
+    appFolderPath,
+    config.appCode,
+    config.engineCode,
+    config.appName,
+    config.appSuffix || '',
+    config.forms
+  );
+
+  return engineCode;
 }
 
 async function promptAndCommit(appFolderPath: string, summary: string): Promise<void> {
@@ -98,7 +135,7 @@ async function handleFileConflict(
   let localContent: string;
   try {
     localContent = fileService.readFile(localPath);
-  } catch (error) {
+  } catch {
     // 文件不存在,直接使用远程版本
     return remoteContent;
   }
@@ -199,7 +236,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   }
 
   // 读取配置
-  let config;
+  let config: CmaxConfig;
   try {
     config = fileService.readCmaxConfig(appFolderPath);
   } catch (error) {
@@ -207,11 +244,18 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     return;
   }
 
+  const engineCode = await ensureEngineCode(config, appFolderPath);
+  if (!engineCode) {
+    vscode.window.showInformationMessage('已取消同步');
+    return;
+  }
+
   let h3Token: string;
   try {
     h3Token = fileService.readToken(appFolderPath);
   } catch (error) {
-    const token = await promptForToken(
+    const token = await promptForTokenWithProjectInfo(
+      config,
       `当前项目缺少可用的 .h3token 文件,请重新输入 Token。\n\n${error instanceof Error ? error.message : String(error)}`
     );
 
@@ -225,8 +269,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     h3Token = token;
   }
 
-  // 设置 Token
-  h3yunApi.setToken(h3Token);
+  // 设置认证信息
+  h3yunApi.setToken(h3Token, engineCode);
 
   try {
     appFolderPath = await syncAppFolderName(appFolderPath, config);
@@ -255,14 +299,14 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           // 检查是否是 Token 失效
           if (errorMsg.includes('401') || errorMsg.includes('认证') || errorMsg.includes('token') || errorMsg.includes('Token')) {
             // 提示用户重新输入 Token
-            const newToken = await promptForToken('Token 已失效,请重新输入');
+            const newToken = await promptForTokenWithProjectInfo(config, 'Token 已失效,请重新输入 h3_token 后继续同步');
             
             if (!newToken) {
               throw new Error('已取消同步');
             }
 
             // 更新 Token 并重试
-            h3yunApi.setToken(newToken);
+            h3yunApi.setToken(newToken, engineCode);
             fileService.saveToken(appFolderPath, newToken);
             fileService.ensureGitIgnore(appFolderPath);
             
@@ -280,6 +324,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           fileService.createCmaxConfig(
             appFolderPath,
             config.appCode,
+            config.engineCode,
             config.appName,
             config.appSuffix || '',
             config.forms
@@ -335,7 +380,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
               if (hasFileConflict(localContent, remoteContent)) {
                 conflictCount++;
               }
-            } catch (error) {
+            } catch {
               // 文件不存在,不算冲突
             }
           }
@@ -430,6 +475,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         fileService.createCmaxConfig(
           appFolderPath,
           config.appCode,
+          config.engineCode,
           config.appName,
           config.appSuffix || '',
           updatedFormsRecord

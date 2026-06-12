@@ -3,59 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>如何获取 h3_token</title>
+    <title>如何获取构建参数</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-        
+
         .container {
-            max-width: 800px;
+            max-width: 880px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             overflow: hidden;
         }
-        
+
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 30px;
             text-align: center;
         }
-        
+
         .header h1 {
             font-size: 24px;
             margin-bottom: 10px;
         }
-        
+
         .header p {
             opacity: 0.9;
             font-size: 14px;
         }
-        
+
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 16px 12px;
+            border: none;
+            border-right: 1px solid #e9ecef;
+            background: transparent;
+            color: #666;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-button:last-child {
+            border-right: none;
+        }
+
+        .tab-button:hover {
+            background: #eef0ff;
+            color: #667eea;
+        }
+
+        .tab-button.active {
+            background: white;
+            color: #667eea;
+            box-shadow: inset 0 -3px 0 #667eea;
+        }
+
         .content {
             padding: 30px;
         }
-        
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        .summary {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            color: #555;
+            line-height: 1.7;
+        }
+
         .step {
-            margin-bottom: 30px;
+            margin-bottom: 24px;
             padding: 20px;
             background: #f8f9fa;
             border-radius: 8px;
             border-left: 4px solid #667eea;
         }
-        
+
         .step-number {
             display: inline-block;
             width: 30px;
@@ -68,7 +120,7 @@
             font-weight: bold;
             margin-right: 10px;
         }
-        
+
         .step-title {
             font-size: 18px;
             font-weight: bold;
@@ -77,21 +129,21 @@
             display: flex;
             align-items: center;
         }
-        
+
         .step-content {
             color: #666;
             line-height: 1.8;
         }
-        
+
         .step-content ol {
             margin-left: 20px;
             margin-top: 10px;
         }
-        
+
         .step-content li {
             margin-bottom: 8px;
         }
-        
+
         .tip {
             background: #fff3cd;
             border: 1px solid #ffc107;
@@ -100,11 +152,11 @@
             margin-top: 15px;
             font-size: 13px;
         }
-        
+
         .tip strong {
             color: #856404;
         }
-        
+
         .warning {
             background: #f8d7da;
             border: 1px solid #f5c6cb;
@@ -114,7 +166,7 @@
             font-size: 13px;
             color: #721c24;
         }
-        
+
         .code {
             background: #2d2d2d;
             color: #f8f8f2;
@@ -123,28 +175,37 @@
             font-family: 'Courier New', monospace;
             font-size: 13px;
         }
-        
+
+        .field-card {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            padding: 12px;
+            margin-top: 12px;
+            background: white;
+            border: 1px solid #e6e6e6;
+            border-radius: 6px;
+        }
+
+        .field-name {
+            font-weight: bold;
+            color: #667eea;
+        }
+
         .browser-tabs {
             display: flex;
             gap: 10px;
             margin-top: 10px;
         }
-        
+
         .browser-tab {
             padding: 8px 16px;
             background: white;
             border: 2px solid #667eea;
             border-radius: 6px;
-            cursor: pointer;
             font-size: 13px;
-            transition: all 0.3s;
         }
-        
-        .browser-tab:hover {
-            background: #667eea;
-            color: white;
-        }
-        
+
         .footer {
             text-align: center;
             padding: 20px;
@@ -157,88 +218,202 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔑 如何获取 h3_token</h1>
-            <p>从浏览器 Cookie 中复制氚云认证 Token</p>
+            <h1>🔑 如何获取构建参数</h1>
+            <p>从氚云构建项目需要填写 AppCode、enginecode 和 h3_token</p>
         </div>
-        
+
+        <div class="tabs" role="tablist">
+            <button class="tab-button active" type="button" data-tab="appCode">AppCode</button>
+            <button class="tab-button" type="button" data-tab="enginecode">enginecode</button>
+            <button class="tab-button" type="button" data-tab="h3Token">h3_token</button>
+        </div>
+
         <div class="content">
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">1</span>
-                    登录氚云平台
+            <div class="tab-panel active" id="appCode">
+                <div class="summary">
+                    <strong>AppCode</strong> 是氚云应用编码。插件使用它定位要构建的应用，它不是应用名称。
                 </div>
-                <div class="step-content">
-                    <ol>
-                        <li>打开浏览器(推荐使用 Chrome 或 Edge)</li>
-                        <li>访问氚云平台并登录您的账号</li>
-                        <li>确保已成功进入氚云工作台</li>
-                    </ol>
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">1</span>
+                        打开应用信息
+                    </div>
+                    <div class="step-content">
+                        <ol>
+                            <li>登录氚云平台并进入工作台。</li>
+                            <li>找到需要构建到本地的应用。</li>
+                            <li>点击该应用的 <strong>应用重命名</strong> 入口。</li>
+                            <li>系统会弹出应用信息框。</li>
+                        </ol>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">2</span>
-                    打开开发者工具
-                </div>
-                <div class="step-content">
-                    <ol>
-                        <li>在氚云页面按 <span class="code">F12</span> 键</li>
-                        <li>或者右键点击页面任意位置,选择"检查"</li>
-                        <li>开发者工具面板会在右侧或底部打开</li>
-                    </ol>
-                    <div class="tip">
-                        <strong>💡 提示:</strong> 如果按 F12 没反应,可以尝试 <span class="code">Ctrl+Shift+I</span> (Windows) 或 <span class="code">Cmd+Option+I</span> (Mac)
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">2</span>
+                        复制应用编码
+                    </div>
+                    <div class="step-content">
+                        <ol>
+                            <li>在应用信息框中找到灰色框内容。</li>
+                            <li>选中灰色框中的完整编码并复制。</li>
+                            <li>回到 VSCode，粘贴到构建表单的 <strong>应用编码</strong> 输入框。</li>
+                        </ol>
+                        <div class="field-card">
+                            <div class="field-name">填写位置</div>
+                            <div>从氚云构建项目表单中的 <strong>应用编码</strong>。</div>
+                        </div>
+                        <div class="tip">
+                            <strong>提示:</strong> 请复制编码值，不要填写应用显示名称。
+                        </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">3</span>
-                    查找 h3_token
+
+            <div class="tab-panel" id="enginecode">
+                <div class="summary">
+                    <strong>enginecode</strong> 是企业引擎编码。氚云接口请求现在要求在 Headers 中携带该参数。
                 </div>
-                <div class="step-content">
-                    <div class="browser-tabs">
-                        <div class="browser-tab">Chrome / Edge</div>
-                        <div class="browser-tab">Firefox</div>
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">1</span>
+                        进入系统集成
                     </div>
-                    
-                    <ol style="margin-top: 15px;">
-                        <li>切换到 <strong>Application</strong>(应用程序) 标签</li>
-                        <li>在左侧菜单展开 <strong>Storage</strong>(存储) → <strong>Cookies</strong></li>
-                        <li>点击氚云平台的域名: www.h3yun.com</li>
-                        <li>在右侧列表中找到 <span class="code">h3_token</span></li>
-                        <li>复制其 <strong>Value</strong>(值) 列的完整内容</li>
-                    </ol>
-                    
-                    <div class="tip">
-                        <strong>💡 提示:</strong> h3_token 的值通常是一串较长的字母数字组合,请完整复制
+                    <div class="step-content">
+                        <ol>
+                            <li>使用 <strong>系统管理员</strong> 账号登录氚云平台。</li>
+                            <li>点击页面右上角头像。</li>
+                            <li>进入 <strong>系统管理</strong>。</li>
+                            <li>打开 <strong>系统集成</strong>。</li>
+                        </ol>
+                        <div class="tip">
+                            <strong>提示:</strong> 只有系统管理员可以进入系统管理界面。如果看不到入口，请联系企业管理员获取 enginecode。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">2</span>
+                        复制 EngineCode
+                    </div>
+                    <div class="step-content">
+                        <ol>
+                            <li>在系统集成页面找到 <span class="code">EngineCode</span> 或企业引擎编码。</li>
+                            <li>复制完整内容。</li>
+                            <li>回到 VSCode，粘贴到构建表单的 <strong>企业引擎编码 enginecode</strong> 输入框。</li>
+                        </ol>
+                        <div class="field-card">
+                            <div class="field-name">填写位置</div>
+                            <div>从氚云构建项目表单中的 <strong>企业引擎编码 enginecode</strong>。</div>
+                        </div>
+                        <div class="warning">
+                            <strong>注意:</strong> EngineCode 和 EngineSecret 都属于重要信息。插件只需要填写 EngineCode，不需要填写 EngineSecret。
+                        </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">4</span>
-                    粘贴到插件
+
+            <div class="tab-panel" id="h3Token">
+                <div class="summary">
+                    <strong>h3_token</strong> 是当前浏览器登录氚云后的认证 Token。插件会把它保存到本地 <span class="code">.h3token</span>，并自动加入 <span class="code">.gitignore</span>。
                 </div>
-                <div class="step-content">
-                    <ol>
-                        <li>回到 VSCode 的输入框</li>
-                        <li>将复制的 Token 粘贴进去</li>
-                        <li>点击确定完成输入</li>
-                    </ol>
-                    <div class="warning">
-                        <strong>⚠️ 注意:</strong> Token 有一定有效期,如果后续同步时提示失效,请重新获取新的 Token
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">1</span>
+                        登录氚云平台
+                    </div>
+                    <div class="step-content">
+                        <ol>
+                            <li>打开浏览器，推荐使用 Chrome 或 Edge。</li>
+                            <li>访问氚云平台并登录您的账号。</li>
+                            <li>确保已成功进入氚云工作台。</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">2</span>
+                        打开开发者工具
+                    </div>
+                    <div class="step-content">
+                        <ol>
+                            <li>在氚云页面按 <span class="code">F12</span> 键。</li>
+                            <li>或者右键点击页面任意位置，选择“检查”。</li>
+                            <li>开发者工具面板会在右侧或底部打开。</li>
+                        </ol>
+                        <div class="tip">
+                            <strong>提示:</strong> 如果按 F12 没反应，可以尝试 <span class="code">Ctrl+Shift+I</span> 或 <span class="code">Cmd+Option+I</span>。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">3</span>
+                        查找 h3_token
+                    </div>
+                    <div class="step-content">
+                        <div class="browser-tabs">
+                            <div class="browser-tab">Chrome / Edge</div>
+                            <div class="browser-tab">Firefox</div>
+                        </div>
+                        <ol style="margin-top: 15px;">
+                            <li>切换到 <strong>Application</strong> 或 <strong>Storage</strong> 标签。</li>
+                            <li>在左侧菜单展开 <strong>Storage</strong> → <strong>Cookies</strong>。</li>
+                            <li>点击氚云平台的域名：<span class="code">www.h3yun.com</span>。</li>
+                            <li>在右侧列表中找到 <span class="code">h3_token</span>。</li>
+                            <li>复制其 <strong>Value</strong> 列的完整内容。</li>
+                        </ol>
+                        <div class="tip">
+                            <strong>提示:</strong> h3_token 的值通常是一串较长的字母数字组合，请完整复制。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-title">
+                        <span class="step-number">4</span>
+                        粘贴到插件
+                    </div>
+                    <div class="step-content">
+                        <ol>
+                            <li>回到 VSCode 的构建表单。</li>
+                            <li>将复制的 Token 粘贴到 <strong>h3_token</strong> 输入框。</li>
+                            <li>点击 <strong>开始构建</strong>。</li>
+                        </ol>
+                        <div class="warning">
+                            <strong>注意:</strong> Token 有一定有效期。如果后续同步时提示失效，请重新获取新的 Token。
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <div class="footer">
             H3Yun CMax - 氚云代码同步工具
         </div>
     </div>
+
+    <script>
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabPanels = document.querySelectorAll('.tab-panel');
+
+        tabButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const targetTab = button.getAttribute('data-tab');
+
+                tabButtons.forEach((item) => item.classList.remove('active'));
+                tabPanels.forEach((panel) => panel.classList.remove('active'));
+
+                button.classList.add('active');
+                document.getElementById(targetTab).classList.add('active');
+            });
+        });
+    </script>
 </body>
 </html>

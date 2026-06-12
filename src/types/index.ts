@@ -24,7 +24,7 @@ export interface H3FormField {
   fieldName: string;    // 字段名称
   fieldType: string;    // 字段类型
   required?: boolean;   // 是否必填
-  defaultValue?: any;   // 默认值
+  defaultValue?: unknown; // 默认值
 }
 
 /**
@@ -32,6 +32,7 @@ export interface H3FormField {
  */
 export interface CmaxConfig {
   appCode: string;                      // 应用编码
+  engineCode: string;                   // 企业引擎编码
   appName: string;                      // 应用名称
   appSuffix?: string;                   // 应用文件夹随机后缀 (a+5位)
   forms: Record<string, CmaxFormEntry>; // 表单配置, key 为随机后缀 (f+5位)
@@ -49,7 +50,7 @@ export interface CmaxFormEntry {
 /**
  * API 响应基础结构
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;   // 请求是否成功
   data?: T;           // 响应数据
   errorCode?: string; // 错误码

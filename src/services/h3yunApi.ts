@@ -31,9 +31,10 @@ import {
 const API_BASE_URL = 'https://www.h3yun.com';
 
 /**
- * 全局 Token 存储
+ * 全局认证信息存储
  */
 let globalToken: string = '';
+let globalEngineCode: string = '';
 const loadFormCache = new Map<string, SheetDesignerLoadFormResponse>();
 const customCodeCache = new Map<string, FormCustomCode>();
 const listViewCodeCache = new Map<string, ListViewCode>();
@@ -68,11 +69,13 @@ function useDefaultCodeIfEmpty(
 }
 
 /**
- * 设置认证 Token
+ * 设置认证信息
  * @param token h3_token
+ * @param engineCode 企业引擎编码
  */
-export function setToken(token: string): void {
+export function setToken(token: string, engineCode: string): void {
   globalToken = token;
+  globalEngineCode = engineCode;
   loadFormCache.clear();
   customCodeCache.clear();
   listViewCodeCache.clear();
@@ -93,6 +96,10 @@ function getAuthHeaders(): Record<string, string> {
     headers['Authorization'] = `Bearer ${globalToken}`;
     // 或者根据实际需求使用 Cookie 方式
     // headers['Cookie'] = `h3_token=${globalToken}`;
+  }
+
+  if (globalEngineCode) {
+    headers['enginecode'] = globalEngineCode;
   }
 
   return headers;
@@ -120,11 +127,13 @@ function ensureSuccessfulStatus(statusCode: number, action: string): void {
  */
 export class H3YunApiService {
   /**
-   * 设置认证 Token
+   * 设置认证信息
    * @param token h3_token
+   * @param engineCode 企业引擎编码
    */
-  setToken(token: string): void {
+  setToken(token: string, engineCode: string): void {
     globalToken = token;
+    globalEngineCode = engineCode;
     loadFormCache.clear();
     customCodeCache.clear();
     listViewCodeCache.clear();

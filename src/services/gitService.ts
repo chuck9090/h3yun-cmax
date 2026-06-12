@@ -13,8 +13,9 @@ export class GitService {
         cwd,
         maxBuffer: 1024 * 1024 * 10
       });
-    } catch (error: any) {
-      const details = [error?.stderr, error?.stdout, error?.message]
+    } catch (error: unknown) {
+      const errorDetails = error as { stderr?: string; stdout?: string; message?: string };
+      const details = [errorDetails.stderr, errorDetails.stdout, errorDetails.message]
         .filter(Boolean)
         .join('\n')
         .trim();

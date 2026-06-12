@@ -3,6 +3,7 @@ import * as path from 'path';
 
 const SUFFIX_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
 const SUFFIX_LEN = 5;
+const INVALID_FOLDER_NAME_CHARS = /[<>:"/\\|?*\x00-\x1F]/g;
 
 /**
  * 生成随机后缀字符串
@@ -31,12 +32,21 @@ export function generateUniqueSuffix(prefix: string, existingSuffixes: Set<strin
 }
 
 /**
+ * 清理文件夹名称中不支持的字符
+ * @param name 原始显示名称
+ */
+export function sanitizeFolderName(name: string): string {
+  const sanitizedName = name.replace(INVALID_FOLDER_NAME_CHARS, '').trim();
+  return sanitizedName || '未命名';
+}
+
+/**
  * 根据名称和后缀生成文件夹名称
  * @param name 显示名称
  * @param suffix 随机后缀
  */
 export function buildFolderName(name: string, suffix: string): string {
-  return `${name}(${suffix})`;
+  return `${sanitizeFolderName(name)}(${suffix})`;
 }
 
 /**
@@ -47,7 +57,7 @@ export function buildFolderName(name: string, suffix: string): string {
 export function folderExists(folderPath: string): boolean {
   try {
     return fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory();
-  } catch (error) {
+  } catch {
     return false;
   }
 }

@@ -25,10 +25,10 @@ export async function handleBuildProject(): Promise<void> {
     return; // 用户取消
   }
 
-  const { appCode, h3Token } = inputData;
+  const { appCode, engineCode, h3Token } = inputData;
 
-  // 设置全局 Token
-  h3yunApi.setToken(h3Token);
+  // 设置全局认证信息
+  h3yunApi.setToken(h3Token, engineCode);
 
   let builtAppFolderPath: string | undefined;
   let buildSummary: string | undefined;
@@ -85,7 +85,7 @@ export async function handleBuildProject(): Promise<void> {
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
-          fileService.createCmaxConfig(appFolderPath, appCode, application.appName, appSuffix, {});
+          fileService.createCmaxConfig(appFolderPath, appCode, engineCode, application.appName, appSuffix, {});
           fileService.saveToken(appFolderPath, h3Token);
           fileService.ensureGitIgnore(appFolderPath);
           fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
@@ -128,7 +128,7 @@ export async function handleBuildProject(): Promise<void> {
 
         // Step 5: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 95 });
-        fileService.createCmaxConfig(appFolderPath, appCode, application.appName, appSuffix, formsRecord);
+        fileService.createCmaxConfig(appFolderPath, appCode, engineCode, application.appName, appSuffix, formsRecord);
         fileService.saveToken(appFolderPath, h3Token);
         fileService.ensureGitIgnore(appFolderPath);
         fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
