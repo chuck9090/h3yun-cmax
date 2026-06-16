@@ -42,13 +42,15 @@ export function sendRequest(url: string, options: HttpRequestOptions = {}): Prom
     };
 
     const req = client.request(requestOptions, (res) => {
-      let body = '';
+      const chunks: Buffer[] = [];
 
-      res.on('data', (chunk) => {
-        body += chunk;
+      res.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
       });
 
       res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+
         resolve({
           statusCode: res.statusCode || 200,
           headers: res.headers as Record<string, string | string[]>,
