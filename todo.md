@@ -1,6 +1,6 @@
 # 待完善功能
 
-- [ ] 优化构建项目 Webview 表单的主题适配。
+- [x] 优化构建项目 Webview 表单的主题适配。
    当前应用编码、`enginecode`、`h3_token` 等输入框使用浅色背景，在 VSCode 深色主题下观感不一致。后续可改为使用 VSCode Webview Theme CSS Variables，例如 `--vscode-input-background`、`--vscode-input-foreground`、`--vscode-input-border`，以自动适配用户当前主题。
 
 - [ ] 优化字段表

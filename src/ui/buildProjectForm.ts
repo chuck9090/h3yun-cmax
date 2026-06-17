@@ -188,17 +188,19 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #f5f5f5;
+            font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+            color: var(--vscode-foreground);
+            background: var(--vscode-editor-background);
             padding: 20px;
         }
         
         .form-container {
             max-width: 600px;
             margin: 0 auto;
-            background: white;
+            background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+            border: 1px solid var(--vscode-panel-border, transparent);
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
             padding: 30px;
         }
         
@@ -209,12 +211,12 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         
         .form-header h1 {
             font-size: 24px;
-            color: #333;
+            color: var(--vscode-foreground);
             margin-bottom: 10px;
         }
         
         .form-header p {
-            color: #666;
+            color: var(--vscode-descriptionForeground);
             font-size: 14px;
         }
         
@@ -225,43 +227,51 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         .form-label {
             display: block;
             margin-bottom: 8px;
-            color: #333;
+            color: var(--vscode-foreground);
             font-weight: 500;
             font-size: 14px;
         }
         
         .form-label .required {
-            color: #f44336;
+            color: var(--vscode-inputValidation-errorBorder, #f44336);
             margin-left: 4px;
         }
         
         .form-input {
             width: 100%;
             padding: 12px;
-            border: 2px solid #ddd;
+            color: var(--vscode-input-foreground);
+            background: var(--vscode-input-background);
+            border: 2px solid var(--vscode-input-border, transparent);
             border-radius: 6px;
-            font-size: 14px;
+            font-family: var(--vscode-font-family);
+            font-size: var(--vscode-font-size, 14px);
             transition: all 0.3s;
+        }
+
+        .form-input::placeholder {
+            color: var(--vscode-input-placeholderForeground);
         }
         
         .form-input:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--vscode-focusBorder);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
         }
         
         .form-input.error {
-            border-color: #f44336;
+            border-color: var(--vscode-inputValidation-errorBorder, #f44336);
         }
 
         .form-input[readonly] {
-            background: #f5f5f5;
-            color: #666;
+            color: var(--vscode-disabledForeground);
+            background: var(--vscode-input-background);
+            opacity: 0.75;
             cursor: not-allowed;
         }
         
         .error-message {
-            color: #f44336;
+            color: var(--vscode-inputValidation-errorForeground, #f44336);
             font-size: 12px;
             margin-top: 6px;
             display: none;
@@ -272,7 +282,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         }
         
         .help-link {
-            color: #667eea;
+            color: var(--vscode-textLink-foreground);
             font-size: 12px;
             cursor: pointer;
             text-decoration: none;
@@ -296,19 +306,21 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
             border: none;
             border-radius: 6px;
             font-size: 14px;
+            font-family: var(--vscode-font-family);
             font-weight: 500;
             cursor: pointer;
             transition: all 0.3s;
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
         }
         
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            background: var(--vscode-button-hoverBackground);
+            box-shadow: 0 4px 12px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.24));
         }
         
         .btn-primary:disabled {
@@ -318,13 +330,13 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         }
         
         .btn-secondary {
-            background: #f5f5f5;
-            color: #666;
-            border: 2px solid #ddd;
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: 2px solid var(--vscode-button-border, transparent);
         }
         
         .btn-secondary:hover {
-            background: #e0e0e0;
+            background: var(--vscode-button-secondaryHoverBackground);
         }
         
         .loading-overlay {
@@ -333,7 +345,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.55);
             display: none;
             align-items: center;
             justify-content: center;
@@ -345,17 +357,20 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         }
         
         .loading-box {
-            background: white;
+            color: var(--vscode-foreground);
+            background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+            border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
             padding: 30px 40px;
             border-radius: 12px;
             text-align: center;
+            box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
         }
         
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 4px solid var(--vscode-progressBar-background, var(--vscode-panel-border, #f3f3f3));
+            border-top-color: var(--vscode-focusBorder);
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 15px;
@@ -367,7 +382,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         }
         
         .loading-text {
-            color: #666;
+            color: var(--vscode-descriptionForeground);
             font-size: 14px;
         }
     </style>
