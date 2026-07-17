@@ -4,7 +4,7 @@
   "description": "氚云低代码平台二开代码同步工具 - 自动从氚云平台同步应用代码到本地,实现版本管理和AI辅助开发",
   "version": "0.0.2",
   "publisher": "ChuckFu",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/chuck9090/h3yun-cmax.git"
