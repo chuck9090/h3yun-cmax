@@ -2,7 +2,7 @@
   "name": "h3yun-cmax",
   "displayName": "H3Yun CMax",
   "description": "氚云低代码平台二开代码同步工具 - 自动从氚云平台同步应用代码到本地,实现版本管理和AI辅助开发",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "ChuckFu",
   "license": "GPL-3.0-only",
   "repository": {
@@ -26,6 +26,10 @@
       {
         "command": "h3yun-cmax.syncProject",
         "title": "从氚云同步"
+      },
+      {
+        "command": "h3yun-cmax.updateProjectToken",
+        "title": "统一更新氚云 Token"
       }
     ],
     "menus": {
@@ -36,11 +40,19 @@
         {
           "command": "h3yun-cmax.syncProject",
           "when": "explorerResourceIsFolder"
+        },
+        {
+          "command": "h3yun-cmax.updateProjectToken"
         }
       ],
       "explorer/context": [
         {
           "command": "h3yun-cmax.syncProject",
+          "when": "explorerResourceIsFolder",
+          "group": "2_workspace"
+        },
+        {
+          "command": "h3yun-cmax.updateProjectToken",
           "when": "explorerResourceIsFolder",
           "group": "2_workspace"
         }

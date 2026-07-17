@@ -6,6 +6,11 @@ import { CmaxConfig, CmaxFormEntry, FileContentMap, H3YunApiVersion } from '../t
 const CMAX_CONFIG_FILENAME = 'cmax.json';
 const H3_TOKEN_FILENAME = '.h3token';
 const GITIGNORE_FILENAME = '.gitignore';
+const APP_FOLDER_SCAN_IGNORES = new Set([
+  '.git',
+  '.opencode',
+  'node_modules'
+]);
 const FAILED_NODES_REPORT_FILENAME = 'failed-nodes.md';
 const GITIGNORE_ENTRIES = [
   H3_TOKEN_FILENAME,
@@ -331,6 +336,39 @@ export class FileService {
   hasCmaxConfig(folderPath: string): boolean {
     const configPath = path.join(folderPath, CMAX_CONFIG_FILENAME);
     return fs.existsSync(configPath);
+  }
+
+  /**
+   * 递归查找项目目录下的所有氚云应用文件夹
+   * @param projectFolderPath 项目文件夹路径
+   * @returns 包含 cmax.json 的应用文件夹路径
+   */
+  findAppFolders(projectFolderPath: string): string[] {
+    if (!fs.existsSync(projectFolderPath) || !fs.statSync(projectFolderPath).isDirectory()) {
+      return [];
+    }
+
+    const appFolders: string[] = [];
+    const pendingFolders = [projectFolderPath];
+
+    while (pendingFolders.length > 0) {
+      const currentFolderPath = pendingFolders.pop()!;
+      if (this.hasCmaxConfig(currentFolderPath)) {
+        appFolders.push(currentFolderPath);
+        continue;
+      }
+
+      const entries = fs.readdirSync(currentFolderPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.isSymbolicLink() || APP_FOLDER_SCAN_IGNORES.has(entry.name)) {
+          continue;
+        }
+
+        pendingFolders.push(path.join(currentFolderPath, entry.name));
+      }
+    }
+
+    return appFolders.sort((left, right) => left.localeCompare(right));
   }
 
   /**

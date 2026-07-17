@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { handleBuildProject } from './commands/buildProject';
 import { handleSyncProject } from './commands/syncProject';
+import { handleUpdateProjectToken } from './commands/updateProjectToken';
 
 /**
  * 插件激活时调用
@@ -39,9 +40,24 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const updateProjectTokenCommand = vscode.commands.registerCommand(
+    'h3yun-cmax.updateProjectToken',
+    async (uri?: vscode.Uri) => {
+      try {
+        await handleUpdateProjectToken(uri);
+      } catch (error) {
+        console.error('统一更新氚云 Token 命令执行失败:', error);
+        vscode.window.showErrorMessage(
+          `统一更新氚云 Token 失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+
   // 将命令订阅添加到上下文
   context.subscriptions.push(buildProjectCommand);
   context.subscriptions.push(syncProjectCommand);
+  context.subscriptions.push(updateProjectTokenCommand);
 }
 
 /**
