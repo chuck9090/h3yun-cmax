@@ -8,6 +8,7 @@ import { buildFolderName } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
+import { promptForCommitMessage } from '../ui/gitCommitPrompt';
 import { 
   showBatchConflictDialog, 
   ConflictResolution, 
@@ -22,6 +23,7 @@ async function promptForTokenWithProjectInfo(config: CmaxConfig, message: string
     submitLabel: '继续同步',
     appCode: config.appCode,
     engineCode: config.engineCode,
+    apiVersion: config.h3yunApiVersion,
     appCodeReadonly: true,
     engineCodeReadonly: true
   });
@@ -75,21 +77,16 @@ async function ensureEngineCode(config: CmaxConfig, appFolderPath: string): Prom
     config.engineCode,
     config.appName,
     config.appSuffix || '',
-    config.forms
+    config.forms,
+    config.h3yunApiVersion
   );
 
   return engineCode;
 }
 
 async function promptAndCommit(appFolderPath: string, summary: string): Promise<void> {
-  const gitAction = await vscode.window.showInformationMessage(
-    `${summary}\n\n是否要自动提交本次同步变更?`,
-    { modal: true },
-    '提交变更',
-    '跳过'
-  );
-
-  if (gitAction !== '提交变更') {
+  const commitMessage = await promptForCommitMessage(summary);
+  if (!commitMessage) {
     return;
   }
 
@@ -102,7 +99,7 @@ async function promptAndCommit(appFolderPath: string, summary: string): Promise<
       },
       async (progress) => {
         progress.report({ message: '正在执行 git add 和 git commit...' });
-        await gitService.initAndCommit(appFolderPath, '同步氚云项目');
+        await gitService.initAndCommit(appFolderPath, commitMessage);
       }
     );
 
@@ -270,6 +267,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   }
 
   // 设置认证信息
+  h3yunApi.setApiVersion(config.h3yunApiVersion);
   h3yunApi.setToken(h3Token, engineCode);
 
   try {
@@ -327,7 +325,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             config.engineCode,
             config.appName,
             config.appSuffix || '',
-            config.forms
+            config.forms,
+            config.h3yunApiVersion
           );
           fileService.updateLastSyncTime(appFolderPath);
           fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
@@ -478,7 +477,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.engineCode,
           config.appName,
           config.appSuffix || '',
-          updatedFormsRecord
+          updatedFormsRecord,
+          config.h3yunApiVersion
         );
         fileService.updateLastSyncTime(appFolderPath);
         fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());

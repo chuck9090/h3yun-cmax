@@ -1,3 +1,5 @@
+export type H3YunApiVersion = 'legacy' | 'new';
+
 /**
  * 氚云应用信息
  */
@@ -33,6 +35,7 @@ export interface H3FormField {
 export interface CmaxConfig {
   appCode: string;                      // 应用编码
   engineCode: string;                   // 企业引擎编码
+  h3yunApiVersion?: H3YunApiVersion;    // 氚云接口版本,缺省使用老版本
   appName: string;                      // 应用名称
   appSuffix?: string;                   // 应用文件夹随机后缀 (a+5位)
   forms: Record<string, CmaxFormEntry>; // 表单配置, key 为随机后缀 (f+5位)

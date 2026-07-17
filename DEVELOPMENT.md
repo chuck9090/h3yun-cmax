@@ -59,7 +59,7 @@ h3yun-cmax/
 5. 获取应用下的表单列表。
 6. 为每个表单创建表单文件夹。
 7. 拉取表单字段、表单前端、表单后端、列表前端、列表后端代码。
-8. 生成包含应用编码、`engineCode` 和表单映射的 `cmax.json` 配置文件。
+8. 生成包含应用编码、`engineCode`、接口版本和表单映射的 `cmax.json` 配置文件。
 9. 保存 `.h3token` 到应用文件夹。
 10. 创建或更新 `.gitignore`，避免提交 Token 和常见 AI 工具缓存目录。
 11. 保存节点获取失败报告 `failed-nodes.md`。
@@ -75,7 +75,7 @@ h3yun-cmax/
 
 1. 从右键菜单传入的文件夹或当前编辑器推断应用目录。
 2. 检查目录下是否存在 `cmax.json`。
-3. 读取 `cmax.json` 和 `.h3token`。
+3. 读取 `cmax.json` 和 `.h3token`,并根据 `h3yunApiVersion` 选择氚云接口版本。
 4. `engineCode` 缺失时提示用户补充并写回 `cmax.json`;Token 缺失或失效时提示用户重新输入。
 5. 拉取氚云最新应用名和表单列表。
 6. 同步应用文件夹名和表单文件夹名。
@@ -136,9 +136,60 @@ const GITIGNORE_ENTRIES = [
 
 后续如果需要新增默认忽略项，只需要维护 `GITIGNORE_ENTRIES`。
 
+### 氚云接口版本分层
+
+为兼容氚云平台接口新旧版本差异,项目在 `cmax.json` 中维护接口版本配置:
+
+```json
+{
+  "h3yunApiVersion": "legacy"
+}
+```
+
+取值说明:
+
+- `legacy`：老版本接口,也是默认值。
+- `new`：新版本接口。
+
+兼容规则:
+
+- 新建项目时默认写入 `"h3yunApiVersion": "legacy"`。
+- 旧项目如果没有该字段,读取配置时按 `legacy` 处理。
+- 同步项目写回 `cmax.json` 时保留当前配置值,避免把用户手动改成的 `new` 覆盖回 `legacy`。
+- 初次从氚云构建项目时固定使用老版本接口;如果用户发现接口版本不匹配,需要在生成后的 `cmax.json` 中手动修改 `h3yunApiVersion`。
+
+相关文件:
+
+- `src/types/index.ts`：定义 `H3YunApiVersion` 和 `CmaxConfig.h3yunApiVersion`。
+- `src/services/fileService.ts`：创建、读取和写回 `cmax.json` 时处理接口版本默认值和保留逻辑。
+- `src/commands/buildProject.ts`：初次构建固定设置为 `legacy`。
+- `src/commands/syncProject.ts`：同步时按 `cmax.json` 中的 `h3yunApiVersion` 设置接口版本。
+- `src/ui/buildProjectForm.ts`：构建或重新输入 Token 时,使用当前流程指定的接口版本进行验证。
+
 ### `src/services/h3yunApi.ts`
 
-氚云接口服务，负责和氚云平台交互。
+氚云接口统一入口,负责按当前接口版本分发到具体实现。
+
+主要职责:
+
+- 维护当前接口版本,缺省为 `legacy`。
+- 对外保持原有 `h3yunApi` 单例入口,避免命令层大面积修改 import。
+- 调用 `setApiVersion()` 后,后续应用、表单、代码等请求会分发到对应版本实现。
+- 调用 `setToken()` 时同时同步到新旧两个实现,保证切换版本后认证信息可用。
+
+调用关系:
+
+```text
+commands/ui
+  ↓
+src/services/h3yunApi.ts
+  ├── legacy → src/services/h3yunApiLegacy.ts
+  └── new    → src/services/h3yunApiNew.ts
+```
+
+### `src/services/h3yunApiLegacy.ts`
+
+氚云老版本接口服务,由原 `h3yunApi.ts` 迁移而来,负责和老版本氚云接口交互。
 
 主要职责：
 
@@ -152,7 +203,13 @@ const GITIGNORE_ENTRIES = [
 - 在远端代码为空时使用 `default-code/` 中的默认模板。
 - 记录部分节点请求失败信息，供构建或同步后生成报告。
 
-此文件聚合了多个 parser 的解析结果，是氚云 API 调用的主要入口。
+此文件聚合了多个 parser 的解析结果,是老版本氚云 API 调用的主要实现。
+
+### `src/services/h3yunApiNew.ts`
+
+氚云新版本接口服务。
+
+当前该文件先继承 `H3YunLegacyApiService`,保持行为一致。后续确认新版本接口差异后,只需要在 `H3YunNewApiService` 中覆盖对应方法,不要把新版本判断散落到命令层或 parser 外层。
 
 ### `src/services/gitService.ts`
 
@@ -300,7 +357,7 @@ HTTP 请求工具。
 
 - 应用目录后缀形如 `a12345`。
 - 表单目录后缀形如 `f12345`。
-- `cmax.json` 用于记录应用编码、`engineCode`、应用名称、表单编码、表单名称和随机后缀映射。
+- `cmax.json` 用于记录应用编码、`engineCode`、氚云接口版本、应用名称、表单编码、表单名称和随机后缀映射。
 - `.h3token` 保存本地 Token，不应提交到 Git。
 - `.gitignore` 由插件自动创建或更新。
 - `failed-nodes.md` 记录本次构建或同步中无法读取的节点。
@@ -331,13 +388,14 @@ npm run lint
 - 修改构建流程时，重点检查 `buildProject.ts`、`fileService.ts` 和 `h3yunApi.ts`。
 - 修改同步流程时，重点检查 `syncProject.ts`、`diffUtils.ts`、`conflictDialog.ts` 和 `diffPreview.ts`。
 - 修改氚云接口字段时，优先调整 `src/parsers/` 下对应 parser，不要把响应解析逻辑散落到命令处理器中。
+- 修改氚云接口版本差异时,优先在 `h3yunApiLegacy.ts` 或 `h3yunApiNew.ts` 中调整具体实现,通过 `h3yunApi.ts` 统一分发。
 - 修改本地项目结构时，需要同步调整 `CmaxConfig` 类型、`fileService.ts` 读写逻辑和同步流程。
 - 新增需要忽略的本地文件或目录时，维护 `fileService.ts` 中的 `GITIGNORE_ENTRIES`。
 - 每次提交前建议至少运行 `npm run compile`。
 
 ## 常见扩展点
 
-- 新增氚云接口：在 `h3yunApi.ts` 中添加 API 方法，并在 `src/parsers/` 中新增或复用 parser。
+- 新增氚云接口：先在 `h3yunApi.ts` 门面中添加方法,再在 `h3yunApiLegacy.ts` 和 `h3yunApiNew.ts` 中实现对应版本逻辑,并在 `src/parsers/` 中新增或复用 parser。
 - 新增生成文件：扩展 `FileContentMap`，调整 `h3yunApi.ts` 的获取逻辑和 `fileService.ts` 的保存逻辑。
 - 新增同步冲突策略：调整 `syncProject.ts` 的冲突处理流程，并扩展 `conflictDialog.ts` 或 `diffPreview.ts`。
 - 新增默认忽略项：调整 `fileService.ts` 中的 `GITIGNORE_ENTRIES`。

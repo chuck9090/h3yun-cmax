@@ -5,6 +5,8 @@ import { gitService } from '../services/gitService';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { CmaxFormEntry } from '../types';
 
+const INITIAL_COMMIT_MESSAGE = '从氚云构建项目';
+
 /**
  * 构建项目命令处理器
  */
@@ -28,6 +30,7 @@ export async function handleBuildProject(): Promise<void> {
   const { appCode, engineCode, h3Token } = inputData;
 
   // 设置全局认证信息
+  h3yunApi.setApiVersion('legacy');
   h3yunApi.setToken(h3Token, engineCode);
 
   let builtAppFolderPath: string | undefined;
@@ -169,7 +172,7 @@ export async function handleBuildProject(): Promise<void> {
       },
       async (progress) => {
         progress.report({ message: '正在执行 git init、git add 和 git commit...' });
-        await gitService.initAndCommit(builtAppFolderPath!, '初始化氚云项目');
+        await gitService.initAndCommit(builtAppFolderPath!, INITIAL_COMMIT_MESSAGE);
       }
     );
 

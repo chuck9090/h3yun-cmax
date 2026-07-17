@@ -261,6 +261,11 @@ function getWebviewHtml(options: DiffPreviewOptions, nonce: string): string {
       background: rgba(187, 128, 9, 0.28);
     }
 
+    tr.current-diff td {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+    }
+
     .legend {
       display: flex;
       gap: 10px;
@@ -323,6 +328,14 @@ function getWebviewHtml(options: DiffPreviewOptions, nonce: string): string {
         vscode.postMessage({ type: 'resolve', resolution: button.dataset.action });
       });
     });
+
+    const firstDiff = document.querySelector('tbody tr.added, tbody tr.removed, tbody tr.changed');
+    if (firstDiff) {
+      firstDiff.classList.add('current-diff');
+      requestAnimationFrame(() => {
+        firstDiff.scrollIntoView({ block: 'center' });
+      });
+    }
   </script>
 </body>
 </html>`;

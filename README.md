@@ -9,6 +9,7 @@
 - **增量同步**: 支持右键点击应用文件夹进行增量同步,并可在同步完成后自动提交 Git 变更
 - **Token 管理**: Token 单独保存到 `.h3token`,并自动通过 `.gitignore` 忽略;Token 缺失或失效时会提示重新输入
 - **配置持久化**: 自动生成 `cmax.json` 配置文件,记录应用和表单结构信息
+- **接口版本切换**: 支持在 `cmax.json` 中配置使用氚云老版本接口或新版本接口
 - **失败节点报告**: 节点表单结构请求失败时,自动在应用根目录生成 `failed-nodes.md`
 - **进度显示**: 实时显示同步进度和状态
 
@@ -99,6 +100,7 @@
 
 **注意**: 
 - 初次构建项目**只能使用命令面板**方式
+- 初次构建默认使用氚云老版本接口;如需切换新版本接口,请构建完成后手动修改应用目录下的 `cmax.json`
 - 增量同步可以使用右键菜单或命令面板
 - 如果项目来自 GitHub clone 且缺少 `.h3token`,首次同步时插件会提示输入 Token,并自动重新生成 `.h3token`
 - 如果旧项目的 `cmax.json` 缺少 `engineCode`,首次同步时插件会提示输入 enginecode,并自动写回 `cmax.json`
@@ -240,7 +242,9 @@
 {
   "appCode": "应用编码",
   "engineCode": "企业引擎编码",
+  "h3yunApiVersion": "legacy",
   "appName": "应用名称",
+  "appSuffix": "axxxxx",
   "forms": {
     "fxxxxx": {
       "formCode": "表单编码",
@@ -250,6 +254,38 @@
   "lastSyncTime": "最后同步时间(ISO格式)"
 }
 ```
+
+字段说明:
+
+- `appCode`: 氚云应用编码。
+- `engineCode`: 企业引擎编码。
+- `h3yunApiVersion`: 氚云接口版本配置。
+- `appName`: 应用名称。
+- `appSuffix`: 应用文件夹随机后缀。
+- `forms`: 表单映射,key 为表单文件夹随机后缀。
+- `lastSyncTime`: 最后同步时间。
+
+### 切换氚云接口版本
+
+如果氚云平台接口发生变化,可以在应用目录下手动修改 `cmax.json` 的 `h3yunApiVersion`:
+
+```json
+{
+  "h3yunApiVersion": "new"
+}
+```
+
+可选值:
+
+- `legacy`: 使用老版本接口。新建项目默认使用此值。
+- `new`: 使用新版本接口。
+
+兼容规则:
+
+- 已有旧项目如果没有 `h3yunApiVersion` 字段,插件会默认按 `legacy` 处理。
+- 从氚云首次构建项目时默认使用 `legacy`,不会在构建表单中让用户选择。
+- 如果发现构建或同步时接口不匹配,请先把 `cmax.json` 中的 `h3yunApiVersion` 改成 `new`,再执行“从氚云同步”。
+- 同步时插件会保留该配置,不会自动改回 `legacy`。
 
 **安全提示**: 
 - Token 会以明文形式保存在 `.h3token` 中
@@ -312,6 +348,29 @@ A: 可能的原因:
 - enginecode 输入错误或旧项目未补充 enginecode
 - Token 无效或已过期
 - 氚云接口响应结构发生变化,需要调整 `src/parsers` 下对应解析器
+- 当前项目使用的接口版本不匹配,可尝试修改 `cmax.json` 中的 `h3yunApiVersion`
+
+### Q: 如何切换氚云新旧接口版本?
+
+A: 打开应用目录下的 `cmax.json`,修改 `h3yunApiVersion` 后保存,再执行“从氚云同步”。
+
+使用老版本接口:
+
+```json
+{
+  "h3yunApiVersion": "legacy"
+}
+```
+
+使用新版本接口:
+
+```json
+{
+  "h3yunApiVersion": "new"
+}
+```
+
+如果旧项目没有这个字段,无需手动补充也可以继续使用,插件会默认按 `legacy` 处理。
 
 ### Q: 如何处理同名文件夹?
 

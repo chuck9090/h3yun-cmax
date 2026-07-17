@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { folderExists, createFolder, generateUniqueSuffix, buildFolderName } from '../utils/folderUtils';
-import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
+import { CmaxConfig, CmaxFormEntry, FileContentMap, H3YunApiVersion } from '../types';
 
 const CMAX_CONFIG_FILENAME = 'cmax.json';
 const H3_TOKEN_FILENAME = '.h3token';
@@ -24,12 +24,15 @@ const GITIGNORE_ENTRIES = [
   '.cline/',
   '.kilocode/',
   '.augment/',
-  '.tabnine/'
+  '.tabnine/',
+  '.codegraph/'
 ];
 
 interface LegacyCmaxConfig extends CmaxConfig {
   h3Token?: string;
 }
+
+const DEFAULT_H3YUN_API_VERSION: H3YunApiVersion = 'legacy';
 
 /**
  * 文件管理服务类
@@ -204,6 +207,7 @@ export class FileService {
    * @param appName 应用名称
    * @param appSuffix 应用文件夹随机后缀
    * @param forms 表单配置记录, key 为随机后缀
+   * @param h3yunApiVersion 氚云接口版本
    */
   createCmaxConfig(
     appFolderPath: string,
@@ -211,11 +215,13 @@ export class FileService {
     engineCode: string,
     appName: string,
     appSuffix: string,
-    forms: Record<string, CmaxFormEntry>
+    forms: Record<string, CmaxFormEntry>,
+    h3yunApiVersion: H3YunApiVersion = DEFAULT_H3YUN_API_VERSION
   ): void {
     const config: CmaxConfig = {
-      appCode,
       engineCode,
+      appCode,
+      h3yunApiVersion,
       appName,
       appSuffix,
       forms,
@@ -303,7 +309,9 @@ export class FileService {
    */
   readCmaxConfig(appFolderPath: string): CmaxConfig {
     const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);
-    return this.readJsonFile<CmaxConfig>(configPath);
+    const config = this.readJsonFile<CmaxConfig>(configPath);
+    config.h3yunApiVersion = config.h3yunApiVersion === 'new' ? 'new' : DEFAULT_H3YUN_API_VERSION;
+    return config;
   }
 
   /**

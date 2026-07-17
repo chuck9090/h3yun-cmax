@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { h3yunApi } from '../services/h3yunApi';
 import * as path from 'path';
 import * as fs from 'fs';
+import { H3YunApiVersion } from '../types';
 
 /**
  * 构建项目输入数据
@@ -18,6 +19,7 @@ interface BuildProjectFormOptions {
   submitLabel?: string;
   appCode?: string;
   engineCode?: string;
+  apiVersion?: H3YunApiVersion;
   appCodeReadonly?: boolean;
   engineCodeReadonly?: boolean;
 }
@@ -86,6 +88,7 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
           panel.webview.postMessage({ command: 'validating' });
           
           try {
+            h3yunApi.setApiVersion(options.apiVersion);
             h3yunApi.setToken(message.h3Token.trim(), message.engineCode.trim());
             
             // 尝试获取应用信息来验证 Token
