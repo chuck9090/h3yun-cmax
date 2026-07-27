@@ -221,7 +221,8 @@ export class FileService {
     appName: string,
     appSuffix: string,
     forms: Record<string, CmaxFormEntry>,
-    h3yunApiVersion: H3YunApiVersion = DEFAULT_H3YUN_API_VERSION
+    h3yunApiVersion: H3YunApiVersion = DEFAULT_H3YUN_API_VERSION,
+    systemUserId?: string
   ): void {
     const config: CmaxConfig = {
       engineCode,
@@ -229,8 +230,9 @@ export class FileService {
       h3yunApiVersion,
       appName,
       appSuffix,
+      systemUserId: systemUserId || undefined,
+      lastSyncTime: new Date().toISOString(),
       forms,
-      lastSyncTime: new Date().toISOString()
     };
 
     const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);

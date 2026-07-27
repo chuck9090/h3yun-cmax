@@ -40,6 +40,7 @@ export interface CmaxConfig {
   appSuffix?: string;                   // 应用文件夹随机后缀 (a+5位)
   forms: Record<string, CmaxFormEntry>; // 表单配置, key 为随机后缀 (f+5位)
   lastSyncTime?: string;                // 最后同步时间
+  systemUserId?: string;                // System 用户的 ObjectId,用于 MCP 执行 SQL 查询
 }
 
 /**

@@ -129,9 +129,21 @@ export async function handleBuildProject(): Promise<void> {
           }
         }
 
-        // Step 5: 创建 cmax.json 配置文件
-        progress.report({ message: '正在生成配置文件...', increment: 95 });
-        fileService.createCmaxConfig(appFolderPath, appCode, engineCode, application.appName, appSuffix, formsRecord);
+        // Step 5: 查询 System 用户 ID
+        progress.report({ message: '正在查询 System 用户 ID...', increment: 5 });
+        const systemUserId = await h3yunApi.getSystemUserId();
+        if (!systemUserId) {
+          vscode.window.showWarningMessage(
+            '无法获取 System 用户 ID,cmax.json 中将不包含 systemUserId 字段。'
+          );
+        }
+
+        // Step 6: 创建 cmax.json 配置文件
+        progress.report({ message: '正在生成配置文件...', increment: 90 });
+        fileService.createCmaxConfig(
+          appFolderPath, appCode, engineCode, application.appName, appSuffix, formsRecord,
+          undefined, systemUserId || undefined
+        );
         fileService.saveToken(appFolderPath, h3Token);
         fileService.ensureGitIgnore(appFolderPath);
         fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());

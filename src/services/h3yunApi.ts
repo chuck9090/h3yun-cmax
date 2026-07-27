@@ -53,6 +53,10 @@ class H3YunApiFacade {
   getFormAllCodes(formCode: string) {
     return this.service.getFormAllCodes(formCode);
   }
+
+  getSystemUserId() {
+    return this.service.getSystemUserId();
+  }
 }
 
 // 导出统一 API 单例实例

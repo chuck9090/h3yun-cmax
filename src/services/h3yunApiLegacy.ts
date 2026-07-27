@@ -384,6 +384,43 @@ export class H3YunLegacyApiService {
   }
 
   /**
+   * 查询 System 用户的 ObjectId,用于 MCP 执行 SQL 查询
+   * @returns System 用户 ObjectId,查询失败返回空字符串
+   */
+  async getSystemUserId(): Promise<string> {
+    try {
+      const SYSTEM_USER_SQL = "select ObjectId from h_user where name='System'";
+      const url = buildUrl('/Console/Reporting/OnAction');
+      const headers = {
+        ...getAuthHeaders(),
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      };
+      const postData = JSON.stringify({
+        ActionName: 'CheckSQL',
+        Sql: SYSTEM_USER_SQL,
+        Columns: '[]'
+      });
+      const body = `PostData=${encodeURIComponent(postData)}`;
+      const response = await post(url, body, headers);
+      const result = parseJsonResponse<{
+        Successful?: boolean;
+        success?: boolean;
+        ReturnData?: { rows?: Array<{ objectid?: string; ObjectId?: string }> };
+      }>(response);
+      const rows = result?.ReturnData?.rows;
+      const systemUserId = Array.isArray(rows) && rows.length > 0
+        ? (rows[0]?.objectid || rows[0]?.ObjectId || '')
+        : '';
+
+      return systemUserId;
+    } catch (error) {
+      console.warn(`查询 System 用户 ID 失败: ${error instanceof Error ? error.message : String(error)}`);
+      return '';
+    }
+  }
+
+  /**
    * 获取表单的所有代码内容
    * @param formCode 表单编码
    * @returns 所有代码内容的映射

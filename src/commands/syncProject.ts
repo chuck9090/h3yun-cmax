@@ -78,7 +78,8 @@ async function ensureEngineCode(config: CmaxConfig, appFolderPath: string): Prom
     config.appName,
     config.appSuffix || '',
     config.forms,
-    config.h3yunApiVersion
+    config.h3yunApiVersion,
+    config.systemUserId
   );
 
   return engineCode;
@@ -270,6 +271,28 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   h3yunApi.setApiVersion(config.h3yunApiVersion);
   h3yunApi.setToken(h3Token, engineCode);
 
+  // 如果 cmax.json 中没有 systemUserId,尝试查询并保存
+  if (!config.systemUserId) {
+    try {
+      const systemUserId = await h3yunApi.getSystemUserId();
+      if (systemUserId) {
+        config.systemUserId = systemUserId;
+        fileService.createCmaxConfig(
+          appFolderPath,
+          config.appCode,
+          config.engineCode,
+          config.appName,
+          config.appSuffix || '',
+          config.forms,
+          config.h3yunApiVersion,
+          config.systemUserId
+        );
+      }
+    } catch {
+      // 查询失败不影响同步流程
+    }
+  }
+
   try {
     appFolderPath = await syncAppFolderName(appFolderPath, config);
   } catch (error) {
@@ -326,7 +349,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             config.appName,
             config.appSuffix || '',
             config.forms,
-            config.h3yunApiVersion
+            config.h3yunApiVersion,
+            config.systemUserId
           );
           fileService.updateLastSyncTime(appFolderPath);
           fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
@@ -478,7 +502,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.appName,
           config.appSuffix || '',
           updatedFormsRecord,
-          config.h3yunApiVersion
+          config.h3yunApiVersion,
+          config.systemUserId
         );
         fileService.updateLastSyncTime(appFolderPath);
         fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());

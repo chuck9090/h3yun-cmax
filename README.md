@@ -255,13 +255,14 @@
   "h3yunApiVersion": "legacy",
   "appName": "应用名称",
   "appSuffix": "axxxxx",
+  "systemUserId": "System用户的ObjectId",
+  "lastSyncTime": "最后同步时间(ISO格式)",
   "forms": {
     "fxxxxx": {
       "formCode": "表单编码",
       "formName": "表单名称"
     }
-  },
-  "lastSyncTime": "最后同步时间(ISO格式)"
+  }
 }
 ```
 
@@ -272,8 +273,9 @@
 - `h3yunApiVersion`: 氚云接口版本配置。
 - `appName`: 应用名称。
 - `appSuffix`: 应用文件夹随机后缀。
-- `forms`: 表单映射,key 为表单文件夹随机后缀。
+- `systemUserId`: System 用户的 ObjectId,供 MCP 工具 h3yun-sql-troubleshooter 执行 SQL 查询时使用。首次构建项目时自动查询并写入;同步时若缺失也会自动补充。
 - `lastSyncTime`: 最后同步时间。
+- `forms`: 表单映射,key 为表单文件夹随机后缀。
 
 ### 切换氚云接口版本
 
