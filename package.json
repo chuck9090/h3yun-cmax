@@ -30,6 +30,10 @@
       {
         "command": "h3yun-cmax.updateProjectToken",
         "title": "统一更新氚云 Token"
+      },
+      {
+        "command": "h3yun-cmax.queryFormName",
+        "title": "查询氚云表单名称"
       }
     ],
     "menus": {
@@ -43,6 +47,10 @@
         },
         {
           "command": "h3yun-cmax.updateProjectToken"
+        },
+        {
+          "command": "h3yun-cmax.queryFormName",
+          "when": "editorTextFocus && editorHasSelection"
         }
       ],
       "explorer/context": [
@@ -55,6 +63,13 @@
           "command": "h3yun-cmax.updateProjectToken",
           "when": "explorerResourceIsFolder",
           "group": "2_workspace"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "h3yun-cmax.queryFormName",
+          "when": "editorTextFocus && editorHasSelection",
+          "group": "navigation@10"
         }
       ]
     }

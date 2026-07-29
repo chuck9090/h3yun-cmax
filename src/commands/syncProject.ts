@@ -527,7 +527,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     }
   );
 
-  if (syncSummary) {
+  if (syncSummary && await gitService.hasChangesExcludingCmaxConfig(appFolderPath)) {
     await promptAndCommit(appFolderPath, syncSummary);
   }
 }

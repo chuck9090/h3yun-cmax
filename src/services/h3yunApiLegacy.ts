@@ -29,6 +29,7 @@ import {
  * 氚云老版本 API 基础配置
  */
 const API_BASE_URL = 'https://www.h3yun.com';
+const SQL_PREVIEW_API_PATH = '/rx-report/integrate/data-source/v1/customsql/previewSql';
 
 /**
  * 全局认证信息存储
@@ -441,6 +442,62 @@ export class H3YunLegacyApiService {
       'list-frontend.js': useDefaultCodeIfEmpty('list-frontend.js', listFrontend, formCode),
       'list-backend.cs': useDefaultCodeIfEmpty('list-backend.cs', listBackend, formCode)
     };
+  }
+
+  /**
+   * 根据主表或子表编码查询所属表单名称。
+   */
+  async queryFormNames(formCode: string, systemUserId?: string): Promise<Array<{
+    formCode: string;
+    childSchemas: string;
+    formName: string;
+  }>> {
+    const executionUserId = systemUserId || await this.getSystemUserId();
+    if (!executionUserId) {
+      throw new Error('无法获取执行 SQL 所需的 System 用户 ID');
+    }
+
+    const sql = [
+      'SELECT SchemaCode AS `主表编码`, ChildSchemas AS `子表编码`,',
+      "extractvalue(Content,'/BizObjectSchema/DisplayName') AS `主表名称`",
+      'FROM H_PublishedBizObjectSchema',
+      `WHERE SchemaCode = '${formCode}' OR ChildSchemas LIKE '%${formCode}%'`
+    ].join(' ');
+    const response = await post(
+      buildUrl(SQL_PREVIEW_API_PATH),
+      JSON.stringify({
+        sql,
+        corpId: globalEngineCode,
+        config: {
+          userId: executionUserId,
+          extra: { icon: 'icon-cgfk' }
+        }
+      }),
+      {
+        ...getAuthHeaders(),
+        'Accept': 'application/json, text/plain, */*',
+        'Origin': API_BASE_URL
+      }
+    );
+    ensureSuccessfulStatus(response.statusCode, '查询表单名称');
+
+    const result = parseJsonResponse<{
+      Successful?: boolean;
+      success?: boolean;
+      Errors?: unknown[];
+      ReturnData?: { rows?: Array<Record<string, unknown>> };
+      data?: { data?: Array<Record<string, unknown>> };
+    }>(response);
+    if (result.Successful === false || result.success === false || (result.Errors && result.Errors.length > 0)) {
+      throw new Error(`氚云平台返回查询失败: ${JSON.stringify(result.Errors || result)}`);
+    }
+
+    const rows = result.data?.data || result.ReturnData?.rows || [];
+    return rows.map((row) => ({
+      formCode: String(row['主表编码'] || row.SchemaCode || ''),
+      childSchemas: String(row['子表编码'] || row.ChildSchemas || ''),
+      formName: String(row['主表名称'] || row.DisplayName || '')
+    }));
   }
 }
 

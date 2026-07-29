@@ -33,6 +33,27 @@ export class GitService {
     await this.runGit(['add', '.'], projectFolderPath);
     await this.runGit(['commit', '-m', commitMessage], projectFolderPath);
   }
+
+  /**
+   * 检查是否存在 cmax.json 以外的工作区变更。
+   */
+  async hasChangesExcludingCmaxConfig(projectFolderPath: string): Promise<boolean> {
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)cmax.json'],
+        {
+          cwd: projectFolderPath,
+          maxBuffer: 1024 * 1024 * 10
+        }
+      );
+
+      return stdout.trim().length > 0;
+    } catch {
+      // 尚未初始化 Git 时仍提示用户，以便保留首次提交能力。
+      return true;
+    }
+  }
 }
 
 // 导出单例实例

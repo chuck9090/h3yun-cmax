@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { handleBuildProject } from './commands/buildProject';
 import { handleSyncProject } from './commands/syncProject';
 import { handleUpdateProjectToken } from './commands/updateProjectToken';
+import { handleQueryFormName } from './commands/queryFormName';
 
 /**
  * 插件激活时调用
@@ -54,10 +55,18 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const queryFormNameCommand = vscode.commands.registerCommand(
+    'h3yun-cmax.queryFormName',
+    async (uri?: vscode.Uri) => {
+      await handleQueryFormName(uri);
+    }
+  );
+
   // 将命令订阅添加到上下文
   context.subscriptions.push(buildProjectCommand);
   context.subscriptions.push(syncProjectCommand);
   context.subscriptions.push(updateProjectTokenCommand);
+  context.subscriptions.push(queryFormNameCommand);
 }
 
 /**

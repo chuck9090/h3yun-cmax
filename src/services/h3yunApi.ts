@@ -57,6 +57,10 @@ class H3YunApiFacade {
   getSystemUserId() {
     return this.service.getSystemUserId();
   }
+
+  queryFormNames(formCode: string, systemUserId?: string) {
+    return this.service.queryFormNames(formCode, systemUserId);
+  }
 }
 
 // 导出统一 API 单例实例
