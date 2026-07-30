@@ -234,7 +234,7 @@ export class H3YunLegacyApiService {
   async getFormFields(formCode: string): Promise<string> {
     try {
       const apiResponse = await this.loadFormDesign(formCode);
-      return parseSchemaJSON(apiResponse);
+      return parseSchemaJSON(apiResponse, formCode);
     } catch (error) {
       throw new Error(`获取表单字段失败: ${error instanceof Error ? error.message : String(error)}`);
     }
