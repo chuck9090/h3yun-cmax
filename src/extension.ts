@@ -3,6 +3,8 @@ import { handleBuildProject } from './commands/buildProject';
 import { handleSyncProject } from './commands/syncProject';
 import { handleUpdateProjectToken } from './commands/updateProjectToken';
 import { handleQueryFormName } from './commands/queryFormName';
+import { registerH3yunFrontendApiProvider } from './providers/h3yunFrontendApiProvider';
+import { registerH3yunBackendApiProvider } from './providers/h3yunBackendApiProvider';
 
 /**
  * 插件激活时调用
@@ -10,6 +12,8 @@ import { handleQueryFormName } from './commands/queryFormName';
  */
 export function activate(context: vscode.ExtensionContext) {
   console.log('H3Yun CMax 插件已激活');
+  registerH3yunFrontendApiProvider(context);
+  registerH3yunBackendApiProvider(context);
 
   // 注册"从氚云构建项目"命令
   const buildProjectCommand = vscode.commands.registerCommand(

@@ -42,7 +42,7 @@ const listViewCodeCache = new Map<string, ListViewCode>();
 const loadFormFailures: Array<{ code: string; name: string; error: string }> = [];
 
 function readDefaultCode(filename: keyof Omit<FileContentMap, 'fields.md'>): string {
-  const defaultCodePath = path.resolve(__dirname, '..', 'default-code', filename);
+  const defaultCodePath = path.resolve(__dirname, '..', '..', 'default-code', filename);
 
   if (!fs.existsSync(defaultCodePath)) {
     return '';
