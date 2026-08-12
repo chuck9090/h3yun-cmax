@@ -4,7 +4,7 @@ import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
 import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
-import { buildFolderName } from '../utils/folderUtils';
+import { buildFolderName, listSubfolders } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
@@ -339,6 +339,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         }
 
         appFolderPath = await syncAppFolderName(appFolderPath, config);
+        const loadFormFailures = h3yunApi.consumeLoadFormFailures();
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
@@ -353,7 +354,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             config.systemUserId
           );
           fileService.updateLastSyncTime(appFolderPath);
-          fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
+          fileService.saveFailedNodesReport(appFolderPath, loadFormFailures);
           syncSummary = '同步完成! 该应用下没有表单';
           return;
         }
@@ -493,6 +494,19 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           }
         }
 
+        let deletedFormCount = 0;
+        if (loadFormFailures.length === 0 && failCount === 0) {
+          // 仅在全部表单成功获取并同步时清理遗留目录,避免请求失败导致误删
+          const latestFormSuffixes = new Set(Object.keys(updatedFormsRecord));
+          for (const folderName of listSubfolders(appFolderPath)) {
+            const suffixMatch = folderName.match(/\((f[0-9a-z]{5})\)$/);
+            if (!suffixMatch || latestFormSuffixes.has(suffixMatch[1])) continue;
+
+            fileService.deleteFolderIfExists(path.join(appFolderPath, folderName));
+            deletedFormCount++;
+          }
+        }
+
         // Step 4: 更新 cmax.json 配置文件
         progress.report({ message: '正在更新配置文件...', increment: 95 });
         fileService.createCmaxConfig(
@@ -506,12 +520,13 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.systemUserId
         );
         fileService.updateLastSyncTime(appFolderPath);
-        fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
+        fileService.saveFailedNodesReport(appFolderPath, loadFormFailures);
 
         progress.report({ message: '完成!', increment: 100 });
 
         // 显示同步结果
-        const summary = `同步完成! 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}`;
+        const deletedSummary = deletedFormCount > 0 ? `, 删除表单: ${deletedFormCount}` : '';
+        const summary = `同步完成! 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${deletedSummary}`;
         syncSummary = summary;
         
         if (failCount === 0) {

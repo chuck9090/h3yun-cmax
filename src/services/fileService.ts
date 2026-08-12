@@ -147,6 +147,16 @@ export class FileService {
   }
 
   /**
+   * 删除文件夹(如果存在)
+   * @param folderPath 文件夹完整路径
+   */
+  deleteFolderIfExists(folderPath: string): void {
+    if (fs.existsSync(folderPath)) {
+      fs.rmSync(folderPath, { recursive: true, force: true });
+    }
+  }
+
+  /**
    * 使用同一个随机后缀重命名文件夹
    * @param currentFolderPath 当前文件夹路径
    * @param newName 新显示名称
