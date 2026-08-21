@@ -14,6 +14,7 @@ const APP_FOLDER_SCAN_IGNORES = new Set([
 const FAILED_NODES_REPORT_FILENAME = 'failed-nodes.md';
 const GITIGNORE_ENTRIES = [
   H3_TOKEN_FILENAME,
+  FAILED_NODES_REPORT_FILENAME,
   '.opencode/',
   '.lingma/',
   '.cursor/',

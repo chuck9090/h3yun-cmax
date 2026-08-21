@@ -26,8 +26,8 @@ class H3YunApiFacade {
     return this.service.getApplication(appCode);
   }
 
-  getForms(appCode: string) {
-    return this.service.getForms(appCode);
+  getForms(appCode: string, knownFormCodes?: Set<string>) {
+    return this.service.getForms(appCode, knownFormCodes);
   }
 
   getFormFields(formCode: string) {

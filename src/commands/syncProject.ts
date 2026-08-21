@@ -242,6 +242,9 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     return;
   }
 
+  // 每次同步开始时清理上一次同步留下的失败报告,本次如有异常会重新生成。
+  fileService.deleteFileIfExists(path.join(appFolderPath, 'failed-nodes.md'));
+
   const engineCode = await ensureEngineCode(config, appFolderPath);
   if (!engineCode) {
     vscode.window.showInformationMessage('已取消同步');
@@ -312,8 +315,11 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         // Step 1: 获取最新的表单列表
         let forms;
+        const knownFormCodes = new Set(
+          Object.values(config.forms).map((form) => form.formCode)
+        );
         try {
-          forms = await h3yunApi.getForms(config.appCode);
+          forms = await h3yunApi.getForms(config.appCode, knownFormCodes);
         } catch (apiError) {
           const errorMsg = apiError instanceof Error ? apiError.message : String(apiError);
           
@@ -332,7 +338,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             fileService.ensureGitIgnore(appFolderPath);
             
             progress.report({ message: '正在使用新 Token 重新获取数据...', increment: 5 });
-            forms = await h3yunApi.getForms(config.appCode);
+            forms = await h3yunApi.getForms(config.appCode, knownFormCodes);
           } else {
             throw apiError;
           }
@@ -340,6 +346,16 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         appFolderPath = await syncAppFolderName(appFolderPath, config);
         const loadFormFailures = h3yunApi.consumeLoadFormFailures();
+
+        if (loadFormFailures.length > 0) {
+          const failureNames = loadFormFailures.map((failure) => failure.name).join('、');
+          fileService.saveFailedNodesReport(appFolderPath, loadFormFailures);
+          vscode.window.showWarningMessage(
+            `本次同步无法确认以下表单的最新结构: ${failureNames}\n请重试同步,本次不会删除任何表单文件夹。`,
+            { modal: true }
+          );
+          throw new Error('表单列表获取异常,已取消本次同步');
+        }
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
@@ -487,6 +503,11 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             successCount++;
           } catch (error) {
             console.error(`同步表单 "${form.formName}" 失败:`, error);
+            const existingEntry = findFormByCode(config.forms, form.formCode);
+            if (existingEntry) {
+              // 同步失败时保留既有映射，避免下次同步把该目录当成已删除表单。
+              updatedFormsRecord[existingEntry.suffix] = existingEntry.entry;
+            }
             failCount++;
             vscode.window.showWarningMessage(
               `表单 "${form.formName}" 同步失败: ${error instanceof Error ? error.message : String(error)}`
@@ -495,12 +516,18 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         }
 
         let deletedFormCount = 0;
-        if (loadFormFailures.length === 0 && failCount === 0) {
-          // 仅在全部表单成功获取并同步时清理遗留目录,避免请求失败导致误删
-          const latestFormSuffixes = new Set(Object.keys(updatedFormsRecord));
+        if (failCount === 0) {
+          // 已知表单的 LoadForm 异常会提前终止同步,这里仅清理明确不在节点列表中的旧目录。
+          const latestFormCodes = new Set(forms.map((form) => form.formCode));
+          const deletedFormSuffixes = new Set(
+            Object.entries(config.forms)
+              .filter(([, entry]) => !latestFormCodes.has(entry.formCode))
+              .map(([suffix]) => suffix)
+          );
+
           for (const folderName of listSubfolders(appFolderPath)) {
             const suffixMatch = folderName.match(/\((f[0-9a-z]{5})\)$/);
-            if (!suffixMatch || latestFormSuffixes.has(suffixMatch[1])) continue;
+            if (!suffixMatch || !deletedFormSuffixes.has(suffixMatch[1])) continue;
 
             fileService.deleteFolderIfExists(path.join(appFolderPath, folderName));
             deletedFormCount++;

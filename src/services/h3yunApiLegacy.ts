@@ -168,7 +168,7 @@ export class H3YunLegacyApiService {
    * @param appCode 应用编码
    * @returns 表单列表
    */
-  async getForms(appCode: string): Promise<H3Form[]> {
+  async getForms(appCode: string, knownFormCodes?: Set<string>): Promise<H3Form[]> {
     try {
       const nodes = await this.getFunctionNodes(appCode);
       const formEntries: Array<H3Form | null> = await Promise.all(nodes.map(async (node) => {
@@ -177,15 +177,24 @@ export class H3YunLegacyApiService {
         try {
           loadFormResponse = await this.loadFormDesign(node.code);
         } catch (error) {
-          loadFormFailures.push({
-            code: node.code,
-            name: node.displayName,
-            error: error instanceof Error ? error.message : String(error)
-          });
+          if (!knownFormCodes || knownFormCodes.has(node.code)) {
+            loadFormFailures.push({
+              code: node.code,
+              name: node.displayName,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
           return null;
         }
 
         if (!hasFormSchema(loadFormResponse)) {
+          if (!knownFormCodes || knownFormCodes.has(node.code)) {
+            loadFormFailures.push({
+              code: node.code,
+              name: node.displayName,
+              error: '该节点曾作为表单同步,但本次 LoadForm 响应不包含有效表单结构'
+            });
+          }
           return null;
         }
 
