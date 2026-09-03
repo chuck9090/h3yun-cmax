@@ -4,6 +4,7 @@ import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { CmaxFormEntry } from '../types';
+import { createFolder, getCodeFolderPath } from '../utils/folderUtils';
 
 const INITIAL_COMMIT_MESSAGE = '从氚云构建项目';
 
@@ -19,6 +20,8 @@ export async function handleBuildProject(): Promise<void> {
   }
 
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
+  const codeFolderPath = getCodeFolderPath(workspaceRoot);
+  createFolder(codeFolderPath);
 
   // 显示输入表单
   const inputData = await showBuildProjectForm();
@@ -74,7 +77,7 @@ export async function handleBuildProject(): Promise<void> {
         // Step 2: 创建应用文件夹
         progress.report({ message: `正在创建应用文件夹: ${application.appName}...`, increment: 10 });
         const { folderPath: appFolderPath, suffix: appSuffix } = fileService.createAppFolder(
-          workspaceRoot,
+          codeFolderPath,
           application.appName
         );
         builtAppFolderPath = appFolderPath;
@@ -89,8 +92,8 @@ export async function handleBuildProject(): Promise<void> {
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
           fileService.createCmaxConfig(appFolderPath, appCode, engineCode, application.appName, appSuffix, {});
-          fileService.saveToken(appFolderPath, h3Token);
-          fileService.ensureGitIgnore(appFolderPath);
+          fileService.saveToken(codeFolderPath, h3Token);
+          fileService.ensureGitIgnore(codeFolderPath);
           fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
           buildSummary = '项目构建成功! 该应用下没有表单';
           return;
@@ -144,8 +147,8 @@ export async function handleBuildProject(): Promise<void> {
           appFolderPath, appCode, engineCode, application.appName, appSuffix, formsRecord,
           undefined, systemUserId || undefined
         );
-        fileService.saveToken(appFolderPath, h3Token);
-        fileService.ensureGitIgnore(appFolderPath);
+        fileService.saveToken(codeFolderPath, h3Token);
+        fileService.ensureGitIgnore(codeFolderPath);
         fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
 
         progress.report({ message: '完成!', increment: 100 });
@@ -163,14 +166,15 @@ export async function handleBuildProject(): Promise<void> {
     return;
   }
 
+  const repositoryExists = await gitService.hasRepository(codeFolderPath);
   const gitAction = await vscode.window.showInformationMessage(
-    `${buildSummary}\n\n是否要自动完成 git init 并提交项目文件?`,
+    `${buildSummary}\n\n${repositoryExists ? '是否要提交本次应用构建文件?' : '是否要初始化 Git 仓库并提交本次应用构建文件?'}`,
     { modal: true },
-    '初始化并提交',
+    repositoryExists ? '提交' : '初始化并提交',
     '跳过'
   );
 
-  if (gitAction !== '初始化并提交') {
+  if (gitAction !== (repositoryExists ? '提交' : '初始化并提交')) {
     vscode.window.showInformationMessage(buildSummary);
     return;
   }
@@ -179,16 +183,18 @@ export async function handleBuildProject(): Promise<void> {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: '正在初始化 Git 仓库并提交项目文件',
+        title: repositoryExists ? '正在提交应用构建文件' : '正在初始化 Git 仓库并提交项目文件',
         cancellable: false
       },
       async (progress) => {
-        progress.report({ message: '正在执行 git init、git add 和 git commit...' });
-        await gitService.initAndCommit(builtAppFolderPath!, INITIAL_COMMIT_MESSAGE);
+        progress.report({ message: repositoryExists ? '正在执行 git add 和 git commit...' : '正在执行 git init、git add 和 git commit...' });
+        await gitService.initAndCommit(codeFolderPath, INITIAL_COMMIT_MESSAGE, builtAppFolderPath!);
       }
     );
 
-    vscode.window.showInformationMessage(`${buildSummary}\nGit 仓库已初始化并完成首次提交`);
+    vscode.window.showInformationMessage(
+      `${buildSummary}\n${repositoryExists ? '应用文件已追加提交到现有 Git 仓库' : 'Git 仓库已初始化并完成首次提交'}`
+    );
   } catch (error) {
     vscode.window.showWarningMessage(
       `${buildSummary}\nGit 初始化或提交失败: ${error instanceof Error ? error.message : String(error)}`,

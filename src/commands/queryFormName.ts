@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 import { fileService } from '../services/fileService';
 import { h3yunApi } from '../services/h3yunApi';
 import { buildFolderName } from '../utils/folderUtils';
+import { CODE_FOLDER_NAME } from '../utils/folderUtils';
+import { promptForUpdateGuide } from '../ui/updateGuide';
 
 /**
  * 从当前编辑文件的父目录中定位所属氚云应用目录。
@@ -57,6 +59,13 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
     return;
   }
 
+  if (path.basename(path.dirname(appFolderPath)) !== CODE_FOLDER_NAME) {
+    await promptForUpdateGuide(
+      '当前应用不在“氚云代码”目录下，可能仍在使用旧版目录方案。请查看更新指南，并重新构建一次项目。'
+    );
+    return;
+  }
+
   try {
     const config = fileService.readCmaxConfig(appFolderPath);
     const localForm = Object.entries(config.forms).find(([, form]) => form.formCode === formCode);
@@ -72,7 +81,15 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
       return;
     }
 
-    const token = fileService.readToken(appFolderPath);
+    let token: string;
+    try {
+      token = fileService.readToken(path.dirname(appFolderPath));
+    } catch (error) {
+      await promptForUpdateGuide(
+        '“氚云代码”目录下没有可用的 .h3token 文件，可能仍在使用旧版目录方案。请查看更新指南，并重新构建一次项目。'
+      );
+      throw error;
+    }
     h3yunApi.setApiVersion(config.h3yunApiVersion);
     h3yunApi.setToken(token, config.engineCode);
 

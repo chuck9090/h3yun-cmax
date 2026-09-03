@@ -2,7 +2,7 @@
   "name": "h3yun-cmax",
   "displayName": "H3Yun CMax",
   "description": "氚云低代码平台二开代码同步工具 - 自动从氚云平台同步应用代码到本地,实现版本管理和AI辅助开发",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "publisher": "ChuckFu",
   "license": "GPL-3.0-only",
   "repository": {
@@ -32,7 +32,7 @@
       },
       {
         "command": "h3yun-cmax.updateProjectToken",
-        "title": "统一更新氚云 Token"
+        "title": "更新氚云 Token"
       },
       {
         "command": "h3yun-cmax.queryFormName",

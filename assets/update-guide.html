@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>氚云代码重大更新使用指南</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 880px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .summary {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            color: #555;
+            line-height: 1.7;
+        }
+
+        .step {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .step-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .step-content {
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .step-content ol {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        .step-content li {
+            margin-bottom: 8px;
+        }
+
+        .tip {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 15px;
+            font-size: 13px;
+        }
+
+        .tip strong {
+            color: #856404;
+        }
+
+        .warning {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 15px;
+            font-size: 13px;
+            color: #721c24;
+        }
+
+        .code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .structure {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            color: #555;
+            line-height: 1.7;
+        }
+
+        .structure-title {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        pre {
+            overflow-x: auto;
+            margin-top: 12px;
+            padding: 16px;
+            background: #2d2d2d;
+            color: #f8f8f2;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 12px;
+            border-top: 1px solid #eee;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .header {
+                padding: 24px 20px;
+            }
+
+            .header h1 {
+                font-size: 21px;
+            }
+
+            .step {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>氚云代码重大更新使用指南</h1>
+            <p>本版本开始，多个氚云应用统一放在“氚云代码”目录中管理。</p>
+        </div>
+
+        <div class="content">
+            <div class="summary">
+                <strong>为什么会看到这个提示？</strong><br>
+                您当前操作的应用可能仍然使用旧版目录结构，或者“氚云代码”目录下还没有统一的 <span class="code">.h3token</span> 文件。
+                本版本不再从应用目录读取 Token。
+            </div>
+
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">1</span>
+                    重新构建项目结构
+                </div>
+                <div class="step-content">
+                    <ol>
+                        <li>在 VSCode 中打开需要保存氚云代码的工作区文件夹。</li>
+                        <li>按 <span class="code">Ctrl+Shift+P</span> 打开命令面板。</li>
+                        <li>执行“从氚云构建项目”。</li>
+                        <li>输入应用编码、企业引擎编码和最新的 <span class="code">h3_token</span>。</li>
+                        <li>等待构建完成。工具会自动创建“氚云代码”目录，并把应用放在该目录下。</li>
+                    </ol>
+                    <div class="tip">
+                        <strong>提示:</strong> 本版本不自动迁移旧项目。请重新执行一次“从氚云构建项目”，使用新方案生成项目结构。
+                    </div>
+                </div>
+            </div>
+
+            <div class="structure">
+                <div class="structure-title">更新后的目录结构</div>
+                <pre>工作区/
+└── 氚云代码/
+    ├── .h3token
+    ├── .gitignore
+    └── 应用名称(axxxxx)/
+        ├── cmax.json
+        └── 表单名称(fxxxxx)/</pre>
+            </div>
+
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">2</span>
+                    以后如何同步应用
+                </div>
+                <div class="step-content">
+                    <ol>
+                        <li>在资源管理器中展开“氚云代码”目录。</li>
+                        <li>右键点击其中的应用目录，例如“应用名称(axxxxx)”。</li>
+                        <li>选择“从氚云同步”。</li>
+                        <li>工具会从“氚云代码/.h3token”读取 Token，并只提交当前应用的 Git 变更。</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">3</span>
+                    Token 和 Git 管理变化
+                </div>
+                <div class="step-content">
+                    <p><span class="code">.h3token</span> 统一保存在“氚云代码”目录，不再放在每个应用目录中。</p>
+                    <p><span class="code">.gitignore</span> 和 Git 仓库也统一放在“氚云代码”目录中，多个应用共用一个 Git 仓库。</p>
+                    <div class="warning">
+                        <strong>注意:</strong> 请不要把 <span class="code">.h3token</span> 提交到公开代码仓库。
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">4</span>
+                    多个应用如何更新 Token
+                </div>
+                <div class="step-content">
+                    <p>右键点击“氚云代码”目录，选择“更新氚云 Token”，输入一次最新 Token 即可更新所有应用共用的 Token。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">5</span>
+                    旧项目注意事项
+                </div>
+                <div class="step-content">
+                    <p>本版本不自动迁移旧项目目录。如果应用仍在工作区根目录或其他旧目录中，请按照本指南重新构建一次。</p>
+                    <p>重新构建完成并确认新应用可以正常同步后，再根据需要清理旧应用目录。</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            H3Yun CMax - 氚云代码同步工具
+        </div>
+    </div>
+</body>
+</html>

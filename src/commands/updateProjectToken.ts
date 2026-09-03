@@ -1,9 +1,10 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { fileService } from '../services/fileService';
+import { CODE_FOLDER_NAME, getCodeFolderPath } from '../utils/folderUtils';
 
 /**
- * 获取统一更新 Token 时使用的项目目录
+ * 获取更新 Token 时使用的项目目录
  * @param uri 资源管理器中选中的文件夹
  */
 function getProjectFolderPath(uri?: vscode.Uri): string | undefined {
@@ -20,7 +21,7 @@ function getProjectFolderPath(uri?: vscode.Uri): string | undefined {
 }
 
 /**
- * 统一覆盖项目中所有氚云应用的认证 Token
+ * 更新氚云代码目录中的统一认证 Token
  * @param uri 资源管理器中选中的项目文件夹
  */
 export async function handleUpdateProjectToken(uri?: vscode.Uri): Promise<void> {
@@ -30,9 +31,27 @@ export async function handleUpdateProjectToken(uri?: vscode.Uri): Promise<void> 
     return;
   }
 
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const codeFolderPath = path.basename(projectFolderPath) === CODE_FOLDER_NAME
+    ? projectFolderPath
+    : workspaceRoot
+      ? getCodeFolderPath(workspaceRoot)
+      : undefined;
+  if (!codeFolderPath) {
+    vscode.window.showErrorMessage('请先打开一个工作区文件夹');
+    return;
+  }
+
+  const isCodeFolder = path.basename(projectFolderPath) === CODE_FOLDER_NAME;
+  const isCodeAppFolder = path.basename(path.dirname(projectFolderPath)) === CODE_FOLDER_NAME;
+  if (!isCodeFolder && !isCodeAppFolder && projectFolderPath !== workspaceRoot) {
+    vscode.window.showWarningMessage('请在“氚云代码”目录或其下的应用文件夹上执行“更新氚云 Token”');
+    return;
+  }
+
   let appFolderPaths: string[];
   try {
-    appFolderPaths = fileService.findAppFolders(projectFolderPath);
+    appFolderPaths = fileService.findAppFolders(codeFolderPath);
   } catch (error) {
     vscode.window.showErrorMessage(
       `扫描氚云应用文件夹失败: ${error instanceof Error ? error.message : String(error)}`
@@ -46,8 +65,8 @@ export async function handleUpdateProjectToken(uri?: vscode.Uri): Promise<void> 
   }
 
   const token = await vscode.window.showInputBox({
-    title: '统一更新氚云 Token',
-    prompt: `输入一次 h3_token，将覆盖 ${appFolderPaths.length} 个应用的 .h3token`,
+    title: '更新氚云 Token',
+    prompt: `输入一次 h3_token，更新“氚云代码”目录下的统一 .h3token（当前包含 ${appFolderPaths.length} 个应用）`,
     placeHolder: '从浏览器 Cookie 中复制的 h3_token 值',
     password: true,
     ignoreFocusOut: true,
@@ -58,40 +77,28 @@ export async function handleUpdateProjectToken(uri?: vscode.Uri): Promise<void> 
     return;
   }
 
-  const failedFolders: string[] = [];
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: '正在统一更新氚云 Token',
-      cancellable: false
-    },
-    async (progress) => {
-      for (let index = 0; index < appFolderPaths.length; index++) {
-        const appFolderPath = appFolderPaths[index];
-        progress.report({
-          message: `${index + 1}/${appFolderPaths.length} ${path.basename(appFolderPath)}`,
-          increment: 100 / appFolderPaths.length
-        });
-
-        try {
-          fileService.saveToken(appFolderPath, token);
-          fileService.ensureGitIgnore(appFolderPath);
-        } catch (error) {
-          console.error(`更新应用 Token 失败: ${appFolderPath}`, error);
-          failedFolders.push(path.basename(appFolderPath));
-        }
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: '正在更新氚云 Token',
+        cancellable: false
+      },
+      async (progress) => {
+        progress.report({ message: '正在保存“氚云代码”目录下的统一 .h3token...' });
+        fileService.saveToken(codeFolderPath, token);
+        fileService.ensureGitIgnore(codeFolderPath);
       }
-    }
-  );
-
-  const successCount = appFolderPaths.length - failedFolders.length;
-  if (failedFolders.length > 0) {
+    );
+  } catch (error) {
     vscode.window.showWarningMessage(
-      `已更新 ${successCount}/${appFolderPaths.length} 个应用，失败: ${failedFolders.join('、')}`,
+      `Token 更新失败: ${error instanceof Error ? error.message : String(error)}`,
       { modal: true }
     );
     return;
   }
 
-  vscode.window.showInformationMessage(`Token 更新完成，共覆盖 ${successCount} 个应用的 .h3token`);
+  vscode.window.showInformationMessage(
+    `Token 更新完成，已更新“氚云代码”目录下的统一 .h3token，当前可供 ${appFolderPaths.length} 个应用使用`
+  );
 }

@@ -34,10 +34,6 @@ const GITIGNORE_ENTRIES = [
   '.codegraph/'
 ];
 
-interface LegacyCmaxConfig extends CmaxConfig {
-  h3Token?: string;
-}
-
 const DEFAULT_H3YUN_API_VERSION: H3YunApiVersion = 'legacy';
 
 /**
@@ -89,14 +85,14 @@ export class FileService {
    * @param appName 应用名称
    * @returns 应用文件夹路径和随机后缀
    */
-  createAppFolder(workspaceRoot: string, appName: string): { folderPath: string; suffix: string } {
+  createAppFolder(codeFolderPath: string, appName: string): { folderPath: string; suffix: string } {
     const usedSuffixes = new Set<string>();
     let suffix: string;
     let folderPath: string;
 
     do {
       suffix = generateUniqueSuffix('a', usedSuffixes);
-      folderPath = path.join(workspaceRoot, buildFolderName(appName, suffix));
+      folderPath = path.join(codeFolderPath, buildFolderName(appName, suffix));
     } while (folderExists(folderPath));
 
     createFolder(folderPath);
@@ -252,24 +248,24 @@ export class FileService {
 
   /**
    * 保存氚云认证 Token
-   * @param appFolderPath 应用文件夹路径
+   * @param codeFolderPath 氚云代码根目录路径
    * @param token 氚云认证 Token
    */
-  saveToken(appFolderPath: string, token: string): void {
-    const tokenPath = path.join(appFolderPath, H3_TOKEN_FILENAME);
+  saveToken(codeFolderPath: string, token: string): void {
+    const tokenPath = path.join(codeFolderPath, H3_TOKEN_FILENAME);
     this.saveFile(tokenPath, `${token.trim()}\n`);
   }
 
   /**
    * 读取氚云认证 Token
-   * @param appFolderPath 应用文件夹路径
+   * @param codeFolderPath 氚云代码根目录路径
    * @returns 氚云认证 Token
    */
-  readToken(appFolderPath: string): string {
-    const tokenPath = path.join(appFolderPath, H3_TOKEN_FILENAME);
+  readToken(codeFolderPath: string): string {
+    const tokenPath = path.join(codeFolderPath, H3_TOKEN_FILENAME);
 
     if (!fs.existsSync(tokenPath)) {
-      return this.migrateLegacyToken(appFolderPath);
+      throw new Error(`缺少 ${H3_TOKEN_FILENAME},请重新构建项目或重新输入 Token`);
     }
 
     const token = this.readFile(tokenPath).trim();
@@ -280,30 +276,12 @@ export class FileService {
 
     return token;
   }
-
-  private migrateLegacyToken(appFolderPath: string): string {
-    const configPath = path.join(appFolderPath, CMAX_CONFIG_FILENAME);
-    const config = this.readJsonFile<LegacyCmaxConfig>(configPath);
-    const token = config.h3Token?.trim();
-
-    if (!token) {
-      throw new Error(`缺少 ${H3_TOKEN_FILENAME},请重新构建项目或重新输入 Token`);
-    }
-
-    delete config.h3Token;
-    this.saveToken(appFolderPath, token);
-    this.ensureGitIgnore(appFolderPath);
-    this.saveFile(configPath, JSON.stringify(config, null, 2));
-
-    return token;
-  }
-
   /**
    * 创建或更新 .gitignore,写入需要忽略的本地文件
-   * @param appFolderPath 应用文件夹路径
+   * @param codeFolderPath 氚云代码根目录路径
    */
-  ensureGitIgnore(appFolderPath: string): void {
-    const gitIgnorePath = path.join(appFolderPath, GITIGNORE_FILENAME);
+  ensureGitIgnore(codeFolderPath: string): void {
+    const gitIgnorePath = path.join(codeFolderPath, GITIGNORE_FILENAME);
     const existingContent = fs.existsSync(gitIgnorePath)
       ? fs.readFileSync(gitIgnorePath, 'utf-8')
       : '';

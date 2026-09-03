@@ -55,15 +55,15 @@ h3yun-cmax/
 1. 获取当前 VSCode 工作区根目录。
 2. 打开构建表单，让用户输入应用编码、企业引擎编码 `enginecode` 和 `h3_token`。
 3. 调用氚云接口获取应用信息。
-4. 在工作区下创建应用文件夹，文件夹名包含随机后缀。
+4. 在工作区下创建“氚云代码”目录，并在其下创建应用文件夹，文件夹名包含随机后缀。
 5. 获取应用下的表单列表。
 6. 为每个表单创建表单文件夹。
 7. 拉取表单字段、表单前端、表单后端、列表前端、列表后端代码。
 8. 生成包含应用编码、`engineCode`、接口版本和表单映射的 `cmax.json` 配置文件。
-9. 保存 `.h3token` 到应用文件夹。
-10. 创建或更新 `.gitignore`，避免提交 Token 和常见 AI 工具缓存目录。
+9. 保存统一的 `.h3token` 到“氚云代码”目录。
+10. 在“氚云代码”目录创建或更新 `.gitignore`，避免提交 Token 和常见 AI 工具缓存目录。
 11. 保存节点获取失败报告 `failed-nodes.md`。
-12. 询问用户是否自动执行 `git init`、`git add` 和首次提交。
+12. 询问用户是否在“氚云代码”目录自动执行 `git init`、`git add` 和首次提交。
 
 构建命令是本插件最重要的入口之一。涉及文件夹创建、API 调用、代码写入、配置生成和 Git 初始化。
 
@@ -75,7 +75,7 @@ h3yun-cmax/
 
 1. 从右键菜单传入的文件夹或当前编辑器推断应用目录。
 2. 检查目录下是否存在 `cmax.json`。
-3. 读取 `cmax.json` 和 `.h3token`,并根据 `h3yunApiVersion` 选择氚云接口版本。
+3. 读取应用目录下的 `cmax.json` 和“氚云代码”目录下的 `.h3token`,并根据 `h3yunApiVersion` 选择氚云接口版本。
 4. `engineCode` 缺失时提示用户补充并写回 `cmax.json`;Token 缺失或失效时提示用户重新输入。
 5. 拉取氚云最新应用名和表单列表。
 6. 同步应用文件夹名和表单文件夹名。
@@ -101,8 +101,8 @@ h3yun-cmax/
 - 保存表单代码文件。
 - 创建和读取 `cmax.json`。
 - 保存和读取 `.h3token`。
-- 迁移旧版本保存在 `cmax.json` 中的 Token。
-- 创建或更新 `.gitignore`。
+- 在“氚云代码”目录保存和读取统一 `.h3token`。
+- 在“氚云代码”目录创建或更新 `.gitignore`。
 - 保存 `failed-nodes.md` 失败报告。
 - 重命名带随机后缀的文件夹。
 
@@ -218,7 +218,7 @@ Git 操作服务，当前封装了初始化和提交逻辑。
 主要职责：
 
 - 执行 `git init`。
-- 执行 `git add .`。
+- 按应用目录范围执行 `git add`，并同步纳入仓库级 `.gitignore`。
 - 执行 `git commit -m <message>`。
 - 捕获 Git 命令错误并返回可读错误信息。
 
@@ -331,26 +331,28 @@ HTTP 请求工具。
 
 ## 本地生成的氚云项目结构
 
-用户执行构建后，插件会在当前工作区下创建一个应用目录。典型结构如下：
+用户执行构建后，插件会在当前工作区下创建“氚云代码”目录，并在其下创建应用目录。典型结构如下：
 
 ```text
-应用名称(a12345)/
+氚云代码/
 ├── .gitignore
 ├── .h3token
-├── cmax.json
-├── failed-nodes.md
-├── 表单A(f12345)/
-│   ├── fields.md
-│   ├── form-frontend.js
-│   ├── form-backend.cs
-│   ├── list-frontend.js
-│   └── list-backend.cs
-└── 表单B(f67890)/
-    ├── fields.md
-    ├── form-frontend.js
-    ├── form-backend.cs
-    ├── list-frontend.js
-    └── list-backend.cs
+├── 应用名称(a12345)/
+│   ├── cmax.json
+│   ├── failed-nodes.md
+│   ├── 表单A(f12345)/
+│   │   ├── fields.md
+│   │   ├── form-frontend.js
+│   │   ├── form-backend.cs
+│   │   ├── list-frontend.js
+│   │   └── list-backend.cs
+│   └── 表单B(f67890)/
+│       ├── fields.md
+│       ├── form-frontend.js
+│       ├── form-backend.cs
+│       ├── list-frontend.js
+│       └── list-backend.cs
+└── 其他应用/
 ```
 
 说明：
@@ -358,9 +360,10 @@ HTTP 请求工具。
 - 应用目录后缀形如 `a12345`。
 - 表单目录后缀形如 `f12345`。
 - `cmax.json` 用于记录应用编码、`engineCode`、氚云接口版本、应用名称、表单编码、表单名称和随机后缀映射。
-- `.h3token` 保存本地 Token，不应提交到 Git。
-- `.gitignore` 由插件自动创建或更新。
+- “氚云代码”目录下的 `.h3token` 保存本地 Token，不应提交到 Git。
+- “氚云代码”目录下的 `.gitignore` 由插件自动创建或更新。
 - `failed-nodes.md` 记录本次构建或同步中无法读取的节点。
+- 报表等 `LoadForm` 响应不包含有效表单结构的非表单节点会直接跳过,不会写入失败报告。
 
 ## 打包与发布
 

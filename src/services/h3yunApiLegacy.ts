@@ -41,6 +41,10 @@ const customCodeCache = new Map<string, FormCustomCode>();
 const listViewCodeCache = new Map<string, ListViewCode>();
 const loadFormFailures: Array<{ code: string; name: string; error: string }> = [];
 
+function isReportNode(node: H3FunctionNode): boolean {
+  return /报表/.test(node.displayName);
+}
+
 function readDefaultCode(filename: keyof Omit<FileContentMap, 'fields.md'>): string {
   const defaultCodePath = path.resolve(__dirname, '..', 'default-code', filename);
 
@@ -177,7 +181,7 @@ export class H3YunLegacyApiService {
         try {
           loadFormResponse = await this.loadFormDesign(node.code);
         } catch (error) {
-          if (!knownFormCodes || knownFormCodes.has(node.code)) {
+          if (!isReportNode(node) && (!knownFormCodes || knownFormCodes.has(node.code))) {
             loadFormFailures.push({
               code: node.code,
               name: node.displayName,
@@ -188,13 +192,7 @@ export class H3YunLegacyApiService {
         }
 
         if (!hasFormSchema(loadFormResponse)) {
-          if (!knownFormCodes || knownFormCodes.has(node.code)) {
-            loadFormFailures.push({
-              code: node.code,
-              name: node.displayName,
-              error: '该节点曾作为表单同步,但本次 LoadForm 响应不包含有效表单结构'
-            });
-          }
+          // LoadForm 成功但没有表单结构时,说明该节点是报表等非表单节点,直接跳过。
           return null;
         }
 

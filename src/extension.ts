@@ -51,9 +51,9 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         await handleUpdateProjectToken(uri);
       } catch (error) {
-        console.error('统一更新氚云 Token 命令执行失败:', error);
+        console.error('更新氚云 Token 命令执行失败:', error);
         vscode.window.showErrorMessage(
-          `统一更新氚云 Token 失败: ${error instanceof Error ? error.message : String(error)}`
+          `更新氚云 Token 失败: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }

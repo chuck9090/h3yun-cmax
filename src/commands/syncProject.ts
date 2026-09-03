@@ -4,11 +4,12 @@ import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
 import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
-import { buildFolderName, listSubfolders } from '../utils/folderUtils';
+import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { promptForCommitMessage } from '../ui/gitCommitPrompt';
+import { promptForUpdateGuide } from '../ui/updateGuide';
 import { 
   showBatchConflictDialog, 
   ConflictResolution, 
@@ -85,7 +86,7 @@ async function ensureEngineCode(config: CmaxConfig, appFolderPath: string): Prom
   return engineCode;
 }
 
-async function promptAndCommit(appFolderPath: string, summary: string): Promise<void> {
+async function promptAndCommit(codeFolderPath: string, appFolderPath: string, summary: string): Promise<void> {
   const commitMessage = await promptForCommitMessage(summary);
   if (!commitMessage) {
     return;
@@ -100,7 +101,7 @@ async function promptAndCommit(appFolderPath: string, summary: string): Promise<
       },
       async (progress) => {
         progress.report({ message: '正在执行 git add 和 git commit...' });
-        await gitService.initAndCommit(appFolderPath, commitMessage);
+        await gitService.initAndCommit(codeFolderPath, commitMessage, appFolderPath);
       }
     );
 
@@ -211,6 +212,7 @@ async function syncAppFolderName(appFolderPath: string, config: CmaxConfig): Pro
  */
 export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   let appFolderPath: string;
+  let codeFolderPath: string;
   let syncSummary: string | undefined;
 
   // 获取应用文件夹路径
@@ -242,6 +244,15 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     return;
   }
 
+  if (path.basename(path.dirname(appFolderPath)) !== CODE_FOLDER_NAME) {
+    await promptForUpdateGuide(
+      '当前应用不在“氚云代码”目录下，可能仍在使用旧版目录方案。请查看更新指南，并重新构建一次项目。'
+    );
+    return;
+  }
+  codeFolderPath = path.dirname(appFolderPath);
+  fileService.ensureGitIgnore(codeFolderPath);
+
   // 每次同步开始时清理上一次同步留下的失败报告,本次如有异常会重新生成。
   fileService.deleteFileIfExists(path.join(appFolderPath, 'failed-nodes.md'));
 
@@ -253,8 +264,11 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
   let h3Token: string;
   try {
-    h3Token = fileService.readToken(appFolderPath);
+    h3Token = fileService.readToken(codeFolderPath);
   } catch (error) {
+    await promptForUpdateGuide(
+      '“氚云代码”目录下没有可用的 .h3token 文件，可能仍在使用旧版目录方案。请查看更新指南，并重新构建一次项目。'
+    );
     const token = await promptForTokenWithProjectInfo(
       config,
       `当前项目缺少可用的 .h3token 文件,请重新输入 Token。\n\n${error instanceof Error ? error.message : String(error)}`
@@ -265,8 +279,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
       return;
     }
 
-    fileService.saveToken(appFolderPath, token);
-    fileService.ensureGitIgnore(appFolderPath);
+    fileService.saveToken(codeFolderPath, token);
+    fileService.ensureGitIgnore(codeFolderPath);
     h3Token = token;
   }
 
@@ -334,8 +348,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
             // 更新 Token 并重试
             h3yunApi.setToken(newToken, engineCode);
-            fileService.saveToken(appFolderPath, newToken);
-            fileService.ensureGitIgnore(appFolderPath);
+            fileService.saveToken(codeFolderPath, newToken);
+            fileService.ensureGitIgnore(codeFolderPath);
             
             progress.report({ message: '正在使用新 Token 重新获取数据...', increment: 5 });
             forms = await h3yunApi.getForms(config.appCode, knownFormCodes);
@@ -569,7 +583,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     }
   );
 
-  if (syncSummary && await gitService.hasChangesExcludingCmaxConfig(appFolderPath)) {
-    await promptAndCommit(appFolderPath, syncSummary);
+  if (syncSummary && await gitService.hasChangesExcludingCmaxConfig(codeFolderPath, appFolderPath)) {
+    await promptAndCommit(codeFolderPath, appFolderPath, syncSummary);
   }
 }

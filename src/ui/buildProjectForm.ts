@@ -41,7 +41,7 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
     );
 
     // 读取 HTML 模板
-    const parameterGuidePath = path.join(__dirname, '..', '..', 'assets', 'token-guide.html');
+    const parameterGuidePath = path.join(__dirname, '..', 'assets', 'token-guide.html');
     let parameterGuideHtml = '';
     try {
       parameterGuideHtml = fs.readFileSync(parameterGuidePath, 'utf-8');

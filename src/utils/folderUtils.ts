@@ -4,6 +4,7 @@ import * as path from 'path';
 const SUFFIX_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
 const SUFFIX_LEN = 5;
 const INVALID_FOLDER_NAME_CHARS = /[<>:"/\\|?*\x00-\x1F]/g;
+export const CODE_FOLDER_NAME = '氚云代码';
 
 /**
  * 生成随机后缀字符串
@@ -125,6 +126,15 @@ export function getWorkspaceRoot(currentPath?: string): string | undefined {
 
   // 回退到当前文件所在目录
   return process.cwd();
+}
+
+/**
+ * 获取并创建统一的氚云代码根目录。
+ */
+export function getCodeFolderPath(workspaceRoot: string): string {
+  return path.basename(workspaceRoot) === CODE_FOLDER_NAME
+    ? workspaceRoot
+    : path.join(workspaceRoot, CODE_FOLDER_NAME);
 }
 
 /**

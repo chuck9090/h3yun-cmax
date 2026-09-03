@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as path from 'path';
 
 const execFileAsync = promisify(execFile);
 
@@ -7,6 +8,55 @@ const execFileAsync = promisify(execFile);
  * Git 操作服务类
  */
 export class GitService {
+  async hasRepository(repositoryPath: string): Promise<boolean> {
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
+        cwd: repositoryPath,
+        maxBuffer: 1024 * 1024
+      });
+      return path.resolve(stdout.trim()) === path.resolve(repositoryPath);
+    } catch {
+      return false;
+    }
+  }
+  private getRelativePath(repositoryPath: string, targetFolderPath?: string): string {
+    const target = targetFolderPath
+      ? path.relative(repositoryPath, targetFolderPath) || '.'
+      : '.';
+    return target.replace(/\\/g, '/');
+  }
+
+  private async ensureNoUnrelatedStagedChanges(
+    repositoryPath: string,
+    targetFolderPath?: string
+  ): Promise<void> {
+    const target = this.getRelativePath(repositoryPath, targetFolderPath);
+    const allowedPaths = target === '.'
+      ? new Set(['.gitignore'])
+      : new Set([target, '.gitignore']);
+    const { stdout } = await execFileAsync(
+      'git',
+      ['diff', '--cached', '--name-only'],
+      { cwd: repositoryPath, maxBuffer: 1024 * 1024 * 10 }
+    );
+    const unrelatedPaths = stdout
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .filter((item) => {
+        const normalized = item.replace(/\\/g, '/');
+        return !Array.from(allowedPaths).some((allowed) => (
+          normalized === allowed || (allowed !== '.gitignore' && normalized.startsWith(`${allowed}/`))
+        ));
+      });
+
+    if (unrelatedPaths.length > 0) {
+      throw new Error(
+        `检测到其他路径已有暂存变更,为避免误提交已停止本次 Git 提交:\n${unrelatedPaths.join('\n')}`
+      );
+    }
+  }
+
   private async runGit(args: string[], cwd: string): Promise<void> {
     try {
       await execFileAsync('git', args, {
@@ -28,22 +78,44 @@ export class GitService {
    * @param projectFolderPath 项目文件夹路径
    * @param commitMessage 提交信息
    */
-  async initAndCommit(projectFolderPath: string, commitMessage: string): Promise<void> {
-    await this.runGit(['init'], projectFolderPath);
-    await this.runGit(['add', '.'], projectFolderPath);
-    await this.runGit(['commit', '-m', commitMessage], projectFolderPath);
+  async initAndCommit(
+    repositoryPath: string,
+    commitMessage: string,
+    targetFolderPath?: string
+  ): Promise<void> {
+    if (!(await this.hasRepository(repositoryPath))) {
+      await this.runGit(['init'], repositoryPath);
+    }
+    await this.ensureNoUnrelatedStagedChanges(repositoryPath, targetFolderPath);
+    const target = this.getRelativePath(repositoryPath, targetFolderPath);
+    const addPaths = target === '.' ? ['.gitignore', '.'] : ['.gitignore', target];
+    await this.runGit(['add', '--', ...addPaths], repositoryPath);
+    await this.runGit(['commit', '-m', commitMessage], repositoryPath);
   }
 
   /**
    * 检查是否存在 cmax.json 以外的工作区变更。
    */
-  async hasChangesExcludingCmaxConfig(projectFolderPath: string): Promise<boolean> {
+  async hasChangesExcludingCmaxConfig(
+    repositoryPath: string,
+    targetFolderPath?: string
+  ): Promise<boolean> {
+    const target = this.getRelativePath(repositoryPath, targetFolderPath);
+    const targetConfigPath = target === '.' ? 'cmax.json' : `${target}/cmax.json`;
     try {
       const { stdout } = await execFileAsync(
         'git',
-        ['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)cmax.json'],
+        [
+          'status',
+          '--porcelain',
+          '--untracked-files=all',
+          '--',
+          target,
+          '.gitignore',
+          `:(exclude)${targetConfigPath}`
+        ],
         {
-          cwd: projectFolderPath,
+          cwd: repositoryPath,
           maxBuffer: 1024 * 1024 * 10
         }
       );
