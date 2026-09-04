@@ -297,17 +297,19 @@ export class FileService {
     systemUserId?: string
   ): void {
     const config: CmaxConfig = {
-      engineCode,
       appCode,
-      h3yunApiVersion,
       appName,
       appSuffix,
-      systemUserId: systemUserId || undefined,
       lastSyncTime: new Date().toISOString(),
       forms,
     };
 
     const workspaceConfig = this.readWorkspaceConfig(codeFolderPath);
+    workspaceConfig.engineCode = engineCode;
+    workspaceConfig.h3yunApiVersion = h3yunApiVersion;
+    if (systemUserId) {
+      workspaceConfig.systemUserId = systemUserId;
+    }
     workspaceConfig.apps[appSuffixKey] = config;
     this.saveWorkspaceConfig(codeFolderPath, workspaceConfig);
   }
@@ -375,7 +377,6 @@ export class FileService {
     if (!config) {
       throw new Error(`氚云代码配置中不存在应用后缀: ${appSuffix}`);
     }
-    config.h3yunApiVersion = config.h3yunApiVersion === 'new' ? 'new' : DEFAULT_H3YUN_API_VERSION;
     return config;
   }
 
@@ -391,6 +392,9 @@ export class FileService {
     const config = this.readJsonFile<Partial<CmaxWorkspaceConfig>>(configPath);
     return {
       version: 2,
+      engineCode: config.engineCode,
+      h3yunApiVersion: config.h3yunApiVersion === 'new' ? 'new' : DEFAULT_H3YUN_API_VERSION,
+      systemUserId: config.systemUserId,
       apps: config.apps || {}
     };
   }

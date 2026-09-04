@@ -459,10 +459,10 @@ export class H3YunLegacyApiService {
     childSchemas: string;
     formName: string;
   }>> {
-    const executionUserId = systemUserId || await this.getSystemUserId();
-    if (!executionUserId) {
+    if (!systemUserId) {
       throw new Error('无法获取执行 SQL 所需的 System 用户 ID');
     }
+    const executionUserId = systemUserId;
 
     const sql = [
       'SELECT SchemaCode AS `主表编码`, ChildSchemas AS `子表编码`,',

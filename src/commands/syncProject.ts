@@ -3,7 +3,7 @@ import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
-import { CmaxConfig, CmaxFormEntry, FileContentMap } from '../types';
+import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap } from '../types';
 import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
@@ -17,14 +17,14 @@ import {
   FileConflict 
 } from '../ui/conflictDialog';
 
-async function promptForTokenWithProjectInfo(config: CmaxConfig, message: string): Promise<string | undefined> {
+async function promptForTokenWithProjectInfo(config: CmaxConfig, workspaceConfig: CmaxWorkspaceConfig, message: string): Promise<string | undefined> {
   const input = await showBuildProjectForm({
     title: '重新输入 h3_token',
     description: message,
     submitLabel: '继续同步',
     appCode: config.appCode,
-    engineCode: config.engineCode,
-    apiVersion: config.h3yunApiVersion,
+    engineCode: workspaceConfig.engineCode,
+    apiVersion: workspaceConfig.h3yunApiVersion,
     appCodeReadonly: true,
     engineCodeReadonly: true
   });
@@ -61,9 +61,9 @@ async function promptForEngineCode(message: string): Promise<string | undefined>
   return undefined;
 }
 
-async function ensureEngineCode(config: CmaxConfig, codeFolderPath: string, appSuffix: string): Promise<string | undefined> {
-  if (config.engineCode && config.engineCode.trim()) {
-    return config.engineCode.trim();
+async function ensureEngineCode(workspaceConfig: CmaxWorkspaceConfig, codeFolderPath: string): Promise<string | undefined> {
+  if (workspaceConfig.engineCode && workspaceConfig.engineCode.trim()) {
+    return workspaceConfig.engineCode.trim();
   }
 
   const engineCode = await promptForEngineCode('当前项目缺少企业引擎编码 enginecode,请补充后继续同步。');
@@ -71,18 +71,8 @@ async function ensureEngineCode(config: CmaxConfig, codeFolderPath: string, appS
     return undefined;
   }
 
-  config.engineCode = engineCode;
-  fileService.createCmaxConfig(
-    codeFolderPath,
-    appSuffix,
-    config.appCode,
-    config.engineCode,
-    config.appName,
-    config.appSuffix || '',
-    config.forms,
-    config.h3yunApiVersion,
-    config.systemUserId
-  );
+  workspaceConfig.engineCode = engineCode;
+  fileService.saveWorkspaceConfig(codeFolderPath, workspaceConfig);
 
   return engineCode;
 }
@@ -198,7 +188,8 @@ async function syncAppFolderName(
   appFolderPath: string,
   codeFolderPath: string,
   appSuffix: string,
-  config: CmaxConfig
+  config: CmaxConfig,
+  workspaceConfig: CmaxWorkspaceConfig
 ): Promise<string> {
   const latestApplication = await h3yunApi.getApplication(config.appCode);
 
@@ -210,12 +201,12 @@ async function syncAppFolderName(
       codeFolderPath,
       appSuffix,
       config.appCode,
-      config.engineCode,
+       workspaceConfig.engineCode || '',
       config.appName,
       config.appSuffix,
       config.forms,
-      config.h3yunApiVersion,
-      config.systemUserId
+       workspaceConfig.h3yunApiVersion,
+       workspaceConfig.systemUserId
     );
     return renamedFolderPath;
   }
@@ -267,7 +258,9 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
   // 读取配置
   let config: CmaxConfig;
+  let workspaceConfig: CmaxWorkspaceConfig;
   try {
+    workspaceConfig = fileService.readWorkspaceConfig(codeFolderPath);
     config = fileService.readCmaxConfig(codeFolderPath, appSuffix);
   } catch (error) {
     vscode.window.showErrorMessage(`读取配置文件失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -279,7 +272,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   // 每次同步开始时清理上一次同步留下的失败报告,本次如有异常会重新生成。
   fileService.saveFailedNodesReport(codeFolderPath, config.appName, []);
 
-  const engineCode = await ensureEngineCode(config, codeFolderPath, appSuffix);
+  const engineCode = await ensureEngineCode(workspaceConfig, codeFolderPath);
   if (!engineCode) {
     vscode.window.showInformationMessage('已取消同步');
     return;
@@ -294,6 +287,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     );
     const token = await promptForTokenWithProjectInfo(
       config,
+      workspaceConfig,
       `当前项目缺少可用的 .h3token 文件,请重新输入 Token。\n\n${error instanceof Error ? error.message : String(error)}`
     );
 
@@ -308,34 +302,11 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   }
 
   // 设置认证信息
-  h3yunApi.setApiVersion(config.h3yunApiVersion);
+  h3yunApi.setApiVersion(workspaceConfig.h3yunApiVersion);
   h3yunApi.setToken(h3Token, engineCode);
 
-  // 如果 cmax.json 中没有 systemUserId,尝试查询并保存
-  if (!config.systemUserId) {
-    try {
-      const systemUserId = await h3yunApi.getSystemUserId();
-      if (systemUserId) {
-        config.systemUserId = systemUserId;
-        fileService.createCmaxConfig(
-          codeFolderPath,
-          appSuffix,
-          config.appCode,
-          config.engineCode,
-          config.appName,
-          config.appSuffix || '',
-          config.forms,
-          config.h3yunApiVersion,
-          config.systemUserId
-        );
-      }
-    } catch {
-      // 查询失败不影响同步流程
-    }
-  }
-
   try {
-    appFolderPath = await syncAppFolderName(appFolderPath, codeFolderPath, appSuffix, config);
+    appFolderPath = await syncAppFolderName(appFolderPath, codeFolderPath, appSuffix, config, workspaceConfig);
   } catch (error) {
     vscode.window.showWarningMessage(`获取或更新应用名称失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -364,7 +335,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           // 检查是否是 Token 失效
           if (errorMsg.includes('401') || errorMsg.includes('认证') || errorMsg.includes('token') || errorMsg.includes('Token')) {
             // 提示用户重新输入 Token
-            const newToken = await promptForTokenWithProjectInfo(config, 'Token 已失效,请重新输入 h3_token 后继续同步');
+            const newToken = await promptForTokenWithProjectInfo(config, workspaceConfig, 'Token 已失效,请重新输入 h3_token 后继续同步');
             
             if (!newToken) {
               throw new Error('已取消同步');
@@ -382,7 +353,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           }
         }
 
-        appFolderPath = await syncAppFolderName(appFolderPath, codeFolderPath, appSuffix, config);
+        appFolderPath = await syncAppFolderName(appFolderPath, codeFolderPath, appSuffix, config, workspaceConfig);
         const loadFormFailures = h3yunApi.consumeLoadFormFailures();
 
         if (loadFormFailures.length > 0) {
@@ -405,12 +376,12 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             codeFolderPath,
             appSuffix,
             config.appCode,
-            config.engineCode,
+            workspaceConfig.engineCode || '',
             config.appName,
             config.appSuffix || '',
             {},
-            config.h3yunApiVersion,
-            config.systemUserId
+            workspaceConfig.h3yunApiVersion,
+            workspaceConfig.systemUserId
           );
           fileService.updateLastSyncTime(codeFolderPath, appSuffix);
           fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
@@ -435,12 +406,12 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             codeFolderPath,
             appSuffix,
             config.appCode,
-            config.engineCode,
+            workspaceConfig.engineCode || '',
             config.appName,
             config.appSuffix || '',
             config.forms,
-            config.h3yunApiVersion,
-            config.systemUserId
+            workspaceConfig.h3yunApiVersion,
+            workspaceConfig.systemUserId
           );
         }
         
@@ -611,12 +582,12 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           codeFolderPath,
           appSuffix,
           config.appCode,
-          config.engineCode,
+          workspaceConfig.engineCode || '',
           config.appName,
           config.appSuffix || '',
           updatedFormsRecord,
-          config.h3yunApiVersion,
-          config.systemUserId
+          workspaceConfig.h3yunApiVersion,
+          workspaceConfig.systemUserId
         );
         fileService.updateLastSyncTime(codeFolderPath, appSuffix);
          fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);

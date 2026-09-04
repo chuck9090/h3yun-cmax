@@ -218,7 +218,7 @@
                         <li>在 VSCode 中打开需要保存氚云代码的工作区文件夹。</li>
                         <li>按 <span class="code">Ctrl+Shift+P</span> 打开命令面板。</li>
                         <li>执行“从氚云构建项目”。</li>
-                        <li>如果当前工作区就是“氚云代码”目录且已有根配置和 Token,构建表单会自动带出可复用的参数；否则输入应用编码、企业引擎编码和最新的 <span class="code">h3_token</span>。</li>
+                        <li>如果当前工作区就是“氚云代码”目录且已有根配置和 Token,构建表单会自动带出根级共享的企业引擎编码和 Token；否则输入应用编码、企业引擎编码和最新的 <span class="code">h3_token</span>。</li>
                         <li>等待构建完成。工具会自动创建“氚云代码”目录，并把应用放在该目录下。</li>
                     </ol>
                     <div class="tip">
@@ -241,7 +241,24 @@
                     <strong>目录后缀说明:</strong> 应用目录后缀以 <span class="code">a</span> 开头,表单目录后缀以 <span class="code">f</span> 开头。默认使用对应编码 MD5 的前 6 位;如发生冲突,工具会自动增加哈希长度。
                 </div>
                 <div class="tip">
-                    <strong>根配置说明:</strong> <span class="code">cmax.json</span> 使用 <span class="code">version: 2</span> 和 <span class="code">apps</span> 结构,以应用目录后缀为 key 记录每个应用的编码、表单映射和同步配置。
+                    <strong>根配置说明:</strong> <span class="code">cmax.json</span> 使用 <span class="code">version: 2</span> 和 <span class="code">apps</span> 结构。根对象统一保存所有应用共用的 <span class="code">engineCode</span>、<span class="code">h3yunApiVersion</span> 和 <span class="code">systemUserId</span>,<span class="code">apps</span> 以应用目录后缀为 key 保存应用编码、名称、表单映射和同步时间。
+                </div>
+                <pre>{
+  "version": 2,
+  "engineCode": "企业引擎编码",
+  "h3yunApiVersion": "legacy",
+  "systemUserId": "System用户的ObjectId",
+  "apps": {
+    "a1a2b3c": {
+      "appCode": "应用编码",
+      "appName": "应用名称",
+      "appSuffix": "a1a2b3c",
+      "forms": {}
+    }
+  }
+}</pre>
+                <div class="tip">
+                    <strong>共享参数说明:</strong> 新工作区首次构建时查询并保存 <span class="code">systemUserId</span>;后续新增应用、同步和表单名称查询均直接复用根级值,不会重复查询。一个“氚云代码”工作区只使用一个根级 <span class="code">engineCode</span> 和接口版本。
                 </div>
             </div>
 
@@ -267,7 +284,7 @@
                 </div>
                 <div class="step-content">
                     <p><span class="code">.h3token</span> 统一保存在“氚云代码”目录，不再放在每个应用目录中。</p>
-                    <p><span class="code">cmax.json</span> 统一保存在“氚云代码”目录,按应用后缀集中管理所有应用、表单和同步配置。</p>
+                    <p><span class="code">cmax.json</span> 统一保存在“氚云代码”目录,根对象保存共享参数,并按应用后缀集中管理所有应用、表单和同步配置。</p>
                     <p><span class="code">.gitignore</span> 和 Git 仓库也统一放在“氚云代码”目录中，多个应用共用一个 Git 仓库。</p>
                     <div class="warning">
                         <strong>注意:</strong> 请不要把 <span class="code">.h3token</span> 提交到公开代码仓库。

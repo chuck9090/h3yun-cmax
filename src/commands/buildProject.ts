@@ -31,12 +31,9 @@ export async function handleBuildProject(): Promise<void> {
       hasWorkspaceConfig = fileService.hasCmaxConfig(codeFolderPath);
       if (hasWorkspaceConfig) {
         const appConfigs = Object.values(workspaceConfig.apps);
-        const engineCodes = appConfigs.map((config) => config.engineCode && config.engineCode.trim());
-        if (appConfigs.length > 0 && engineCodes.every((engineCode) => !!engineCode)) {
-          const uniqueEngineCodes = Array.from(new Set(engineCodes));
-          if (uniqueEngineCodes.length === 1) {
-            presetEngineCode = uniqueEngineCodes[0];
-          }
+        const engineCode = workspaceConfig.engineCode?.trim();
+        if (appConfigs.length > 0 && engineCode) {
+          presetEngineCode = engineCode;
         }
       }
     } catch {
@@ -67,9 +64,11 @@ export async function handleBuildProject(): Promise<void> {
   }
 
   const { appCode, engineCode, h3Token } = inputData;
+  const workspaceConfig = fileService.readWorkspaceConfig(codeFolderPath);
+  const hasWorkspaceConfig = fileService.hasCmaxConfig(codeFolderPath);
 
   // 设置全局认证信息
-  h3yunApi.setApiVersion('legacy');
+  h3yunApi.setApiVersion(workspaceConfig.h3yunApiVersion);
   h3yunApi.setToken(h3Token, engineCode);
 
   let builtAppFolderPath: string | undefined;
@@ -146,9 +145,24 @@ export async function handleBuildProject(): Promise<void> {
           }
         }
 
+        // 首次构建时查询 System 用户 ID,后续应用复用根配置中的值。
+        let systemUserId = workspaceConfig.systemUserId;
+        if (!hasWorkspaceConfig && !systemUserId) {
+          progress.report({ message: '正在查询 System 用户 ID...', increment: 5 });
+          systemUserId = await h3yunApi.getSystemUserId();
+          if (!systemUserId) {
+            vscode.window.showWarningMessage(
+              '无法获取 System 用户 ID,cmax.json 中将不包含 systemUserId 字段。'
+            );
+          }
+        }
+
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
-          fileService.createCmaxConfig(codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, {});
+          fileService.createCmaxConfig(
+            codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, {},
+            workspaceConfig.h3yunApiVersion, systemUserId || undefined
+          );
           fileService.saveToken(codeFolderPath, h3Token);
           fileService.ensureGitIgnore(codeFolderPath);
            fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
@@ -203,20 +217,11 @@ export async function handleBuildProject(): Promise<void> {
           }
         }
 
-        // Step 5: 查询 System 用户 ID
-        progress.report({ message: '正在查询 System 用户 ID...', increment: 5 });
-        const systemUserId = await h3yunApi.getSystemUserId();
-        if (!systemUserId) {
-          vscode.window.showWarningMessage(
-            '无法获取 System 用户 ID,cmax.json 中将不包含 systemUserId 字段。'
-          );
-        }
-
         // Step 6: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 90 });
         fileService.createCmaxConfig(
           codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, formsRecord,
-          undefined, systemUserId || undefined
+          workspaceConfig.h3yunApiVersion, systemUserId || undefined
         );
         fileService.saveToken(codeFolderPath, h3Token);
         fileService.ensureGitIgnore(codeFolderPath);

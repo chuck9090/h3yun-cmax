@@ -94,8 +94,13 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
       );
       throw error;
     }
-    h3yunApi.setApiVersion(config.h3yunApiVersion);
-    h3yunApi.setToken(token, config.engineCode);
+    const workspaceConfig = fileService.readWorkspaceConfig(codeFolderPath);
+    if (!workspaceConfig.systemUserId) {
+      vscode.window.showWarningMessage('当前项目缺少 System 用户 ID,请先使用新版工具重新构建项目后再查询。');
+      return;
+    }
+    h3yunApi.setApiVersion(workspaceConfig.h3yunApiVersion);
+    h3yunApi.setToken(token, workspaceConfig.engineCode || '');
 
     const forms = await vscode.window.withProgress(
       {
@@ -103,7 +108,7 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
         title: '正在查询氚云表单名称',
         cancellable: false
       },
-      () => h3yunApi.queryFormNames(formCode, config.systemUserId)
+      () => h3yunApi.queryFormNames(formCode, workspaceConfig.systemUserId)
     );
 
     if (forms.length === 0) {

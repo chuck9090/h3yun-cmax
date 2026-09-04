@@ -59,13 +59,13 @@ h3yun-cmax/
 5. 获取应用下的表单列表。
 6. 为每个表单创建表单文件夹。表单后缀为 `f` 加表单编码 MD5 前 6 位,冲突时逐步增加 MD5 前缀长度。
 7. 拉取表单字段、表单前端、表单后端、列表前端、列表后端代码。
-8. 更新“氚云代码”目录下统一的 `cmax.json`,写入当前应用的应用编码、`engineCode`、接口版本和表单映射。
+8. 更新“氚云代码”目录下统一的 `cmax.json`,写入根级共享的 `engineCode`、接口版本和 `systemUserId`,以及当前应用的应用编码和表单映射。
 9. 保存统一的 `.h3token` 到“氚云代码”目录。
 10. 在“氚云代码”目录创建或更新 `.gitignore`，避免提交 Token 和常见 AI 工具缓存目录。
 11. 在“氚云代码”根目录保存节点获取失败报告 `failed-nodes(应用名称).md`。
 12. 询问用户是否提交本次添加应用的构建文件;如果尚未初始化 Git,提交时由工具在后台自动初始化,不在弹窗中单独提示。
 
-构建命令如果发现当前工作区就是“氚云代码”目录,会从根 `cmax.json` 和 `.h3token` 预填企业引擎编码与 Token。仅当所有已有应用使用同一个非空企业引擎编码时才将其设为只读;多个应用使用不同引擎编码时不预填,避免使用错误配置。Token 保持可编辑;Token 验证失败时构建表单不关闭,用户可替换 Token 后重试。
+构建命令如果发现当前工作区就是“氚云代码”目录,会从根 `cmax.json` 和 `.h3token` 预填根级共享的企业引擎编码与 Token。一个“氚云代码”工作区只使用一个根级企业引擎编码。Token 保持可编辑;Token 验证失败时构建表单不关闭,用户可替换 Token 后重试。`systemUserId` 仅在根配置首次缺失时查询,后续新增应用和同步直接复用根级值。
 
 构建命令是本插件最重要的入口之一。涉及文件夹创建、API 调用、代码写入、配置生成和 Git 初始化。
 
@@ -77,8 +77,8 @@ h3yun-cmax/
 
 1. 从右键菜单传入的文件夹或当前编辑器推断应用目录。
 2. 检查“氚云代码”目录下是否存在根 `cmax.json`,并从应用目录后缀定位当前应用配置。
-3. 读取根 `cmax.json` 中当前应用配置和“氚云代码”目录下的 `.h3token`,并根据 `h3yunApiVersion` 选择氚云接口版本。
-4. `engineCode` 缺失时提示用户补充并写回根 `cmax.json`;Token 缺失或失效时提示用户重新输入。
+3. 读取根 `cmax.json` 中的共享配置和当前应用配置,并根据根级 `h3yunApiVersion` 选择氚云接口版本。
+4. 根级 `engineCode` 缺失时提示用户补充并写回根 `cmax.json`;Token 缺失或失效时提示用户重新输入。
 5. 拉取氚云最新应用名和表单列表。
 6. 同步应用文件夹名和表单文件夹名。
 7. 获取远端表单代码。
@@ -141,7 +141,7 @@ const GITIGNORE_ENTRIES = [
 
 ### 氚云接口版本分层
 
-为兼容氚云平台接口新旧版本差异,项目在根 `cmax.json` 的各应用配置中维护接口版本:
+为兼容氚云平台接口新旧版本差异,项目在根 `cmax.json` 中维护所有应用共用的接口版本:
 
 ```json
 {
@@ -154,19 +154,18 @@ const GITIGNORE_ENTRIES = [
 - `legacy`：老版本接口,也是默认值。
 - `new`：新版本接口。
 
-兼容规则:
+使用规则:
 
-- 新建项目时默认写入 `"h3yunApiVersion": "legacy"`。
-- 旧项目如果没有该字段,读取配置时按 `legacy` 处理。
-- 同步项目写回 `cmax.json` 时保留当前配置值,避免把用户手动改成的 `new` 覆盖回 `legacy`。
-- 初次从氚云构建项目时固定使用老版本接口;如果用户发现接口版本不匹配,需要在生成后的 `cmax.json` 中手动修改 `h3yunApiVersion`。
+- 新建工作区时默认写入 `"h3yunApiVersion": "legacy"`。
+- 已有根级配置时,新增应用和同步均保留当前配置值,不会覆盖用户手动改成的 `new`。
+- 旧项目需要使用新版工具重新构建项目结构,不会读取旧应用目录中的配置。
 
 相关文件:
 
-- `src/types/index.ts`：定义 `H3YunApiVersion` 和 `CmaxConfig.h3yunApiVersion`。
+- `src/types/index.ts`：定义 `H3YunApiVersion` 和 `CmaxWorkspaceConfig.h3yunApiVersion`。
 - `src/services/fileService.ts`：创建、读取和写回 `cmax.json` 时处理接口版本默认值和保留逻辑。
-- `src/commands/buildProject.ts`：初次构建固定设置为 `legacy`。
-- `src/commands/syncProject.ts`：同步时按 `cmax.json` 中的 `h3yunApiVersion` 设置接口版本。
+- `src/commands/buildProject.ts`：新建工作区时默认使用 `legacy`,已有工作区时复用根级配置。
+- `src/commands/syncProject.ts`：同步时按根级 `cmax.json` 中的 `h3yunApiVersion` 设置接口版本。
 - `src/ui/buildProjectForm.ts`：构建或重新输入 Token 时,使用当前流程指定的接口版本进行验证。
 
 ### `src/services/h3yunApi.ts`
@@ -364,7 +363,7 @@ HTTP 请求工具。
 - 应用目录后缀默认形如 `a1a2b3c`,由 `a` 加应用编码 MD5 的前 6 位组成。
 - 表单目录后缀默认形如 `f1a2b3c`,由 `f` 加表单编码 MD5 的前 6 位组成。
 - 发生冲突时依次使用 MD5 前 7 位、前 8 位等更长前缀,直到生成唯一后缀。
-- 根目录 `cmax.json` 按应用后缀记录应用编码、`engineCode`、氚云接口版本、应用名称、表单编码、表单名称和后缀映射。应用目录下不再保存独立的 `cmax.json`。
+- 根目录 `cmax.json` 在根对象记录所有应用共用的 `engineCode`、氚云接口版本和 `systemUserId`,并按应用后缀记录应用编码、应用名称、表单编码、表单名称和后缀映射。应用目录下不再保存独立的 `cmax.json`。
 - “氚云代码”目录下的 `.h3token` 保存本地 Token，不应提交到 Git。
 - “氚云代码”目录下的 `.gitignore` 由插件自动创建或更新。
 - `failed-nodes(应用名称).md` 记录本次构建或同步中无法读取的节点,并由根目录 `.gitignore` 中的 `failed-nodes*.md` 忽略。
