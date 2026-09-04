@@ -1,36 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 
-const SUFFIX_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
-const SUFFIX_LEN = 5;
 const INVALID_FOLDER_NAME_CHARS = /[<>:"/\\|?*\x00-\x1F]/g;
 export const CODE_FOLDER_NAME = '氚云代码';
-
-/**
- * 生成随机后缀字符串
- * @param prefix 固定前缀 (如 'a' 或 'f')
- */
-export function generateRandomSuffix(prefix: string): string {
-  let result = prefix;
-  for (let i = 0; i < SUFFIX_LEN; i++) {
-    result += SUFFIX_CHARS[Math.floor(Math.random() * SUFFIX_CHARS.length)];
-  }
-  return result;
-}
-
-/**
- * 生成唯一的随机后缀,确保不与已有后缀重复
- * @param prefix 固定前缀
- * @param existingSuffixes 已使用的后缀集合
- */
-export function generateUniqueSuffix(prefix: string, existingSuffixes: Set<string>): string {
-  let suffix = generateRandomSuffix(prefix);
-  while (existingSuffixes.has(suffix)) {
-    suffix = generateRandomSuffix(prefix);
-  }
-  existingSuffixes.add(suffix);
-  return suffix;
-}
 
 /**
  * 清理文件夹名称中不支持的字符
@@ -42,9 +15,46 @@ export function sanitizeFolderName(name: string): string {
 }
 
 /**
+ * 根据应用或表单编码生成稳定后缀,发生冲突时逐步增加 MD5 前缀长度。
+ * @param prefix 类型前缀,应用为 a,表单为 f
+ * @param code 应用编码或表单编码
+ * @param existingMappings 已使用后缀到编码的映射
+ * @param isFolderSuffixAvailable 检查文件夹层面后缀是否可用
+ */
+export function generateCodeSuffix(
+  prefix: string,
+  code: string,
+  existingMappings: Map<string, string>,
+  isFolderSuffixAvailable?: (suffix: string) => boolean
+): string {
+  const hash = createHash('md5')
+    .update(code, 'utf8')
+    .digest('hex');
+
+  const existingSuffix = Array.from(existingMappings.entries())
+    .find(([, existingCode]) => existingCode === code)?.[0];
+  if (existingSuffix) {
+    return existingSuffix;
+  }
+
+  for (let length = 6; length <= hash.length; length++) {
+    const suffix = `${prefix}${hash.substring(0, length)}`;
+    const hasSuffixConflict = existingMappings.has(suffix);
+    const folderSuffixAvailable = !isFolderSuffixAvailable || isFolderSuffixAvailable(suffix);
+
+    if (!hasSuffixConflict && folderSuffixAvailable) {
+      existingMappings.set(suffix, code);
+      return suffix;
+    }
+  }
+
+  throw new Error(`无法为编码 ${code} 生成唯一目录后缀`);
+}
+
+/**
  * 根据名称和后缀生成文件夹名称
  * @param name 显示名称
- * @param suffix 随机后缀
+ * @param suffix 目录后缀
  */
 export function buildFolderName(name: string, suffix: string): string {
   return `${sanitizeFolderName(name)}(${suffix})`;

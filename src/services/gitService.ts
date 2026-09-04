@@ -32,8 +32,8 @@ export class GitService {
   ): Promise<void> {
     const target = this.getRelativePath(repositoryPath, targetFolderPath);
     const allowedPaths = target === '.'
-      ? new Set(['.gitignore'])
-      : new Set([target, '.gitignore']);
+      ? new Set(['.gitignore', 'cmax.json'])
+      : new Set([target, '.gitignore', 'cmax.json']);
     const { stdout } = await execFileAsync(
       'git',
       ['diff', '--cached', '--name-only'],
@@ -88,20 +88,19 @@ export class GitService {
     }
     await this.ensureNoUnrelatedStagedChanges(repositoryPath, targetFolderPath);
     const target = this.getRelativePath(repositoryPath, targetFolderPath);
-    const addPaths = target === '.' ? ['.gitignore', '.'] : ['.gitignore', target];
+    const addPaths = target === '.' ? ['.gitignore', '.'] : ['.gitignore', 'cmax.json', target];
     await this.runGit(['add', '--', ...addPaths], repositoryPath);
     await this.runGit(['commit', '-m', commitMessage], repositoryPath);
   }
 
   /**
-   * 检查是否存在 cmax.json 以外的工作区变更。
+   * 检查当前应用代码或根 cmax.json 是否存在工作区变更。
    */
   async hasChangesExcludingCmaxConfig(
     repositoryPath: string,
     targetFolderPath?: string
   ): Promise<boolean> {
     const target = this.getRelativePath(repositoryPath, targetFolderPath);
-    const targetConfigPath = target === '.' ? 'cmax.json' : `${target}/cmax.json`;
     try {
       const { stdout } = await execFileAsync(
         'git',
@@ -111,8 +110,8 @@ export class GitService {
           '--untracked-files=all',
           '--',
           target,
-          '.gitignore',
-          `:(exclude)${targetConfigPath}`
+           '.gitignore',
+           'cmax.json'
         ],
         {
           cwd: repositoryPath,

@@ -19,6 +19,7 @@ interface BuildProjectFormOptions {
   submitLabel?: string;
   appCode?: string;
   engineCode?: string;
+  h3Token?: string;
   apiVersion?: H3YunApiVersion;
   appCodeReadonly?: boolean;
   engineCodeReadonly?: boolean;
@@ -174,6 +175,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
   const submitLabel = escapeAttribute(options.submitLabel || '开始构建');
   const appCode = escapeAttribute(options.appCode);
   const engineCode = escapeAttribute(options.engineCode);
+  const h3Token = escapeAttribute(options.h3Token);
   const appCodeReadonly = options.appCodeReadonly ? 'readonly' : '';
   const engineCodeReadonly = options.engineCodeReadonly ? 'readonly' : '';
 
@@ -439,6 +441,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
                     id="h3Token" 
                     class="form-input" 
                     placeholder="从浏览器 Cookie 中复制的 h3_token 值"
+                    value="${h3Token}"
                     autocomplete="off"
                 />
                 <div class="error-message" id="h3TokenError"></div>

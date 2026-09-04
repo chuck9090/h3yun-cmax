@@ -60,7 +60,7 @@ export async function handleUpdateProjectToken(uri?: vscode.Uri): Promise<void> 
   }
 
   if (appFolderPaths.length === 0) {
-    vscode.window.showWarningMessage('所选文件夹下未找到包含 cmax.json 的氚云应用');
+    vscode.window.showWarningMessage('所选文件夹下未找到已登记的氚云应用');
     return;
   }
 

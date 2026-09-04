@@ -219,7 +219,7 @@
     <div class="container">
         <div class="header">
             <h1>🔑 如何获取构建参数</h1>
-            <p>从氚云构建项目需要填写 AppCode、enginecode 和 h3_token</p>
+            <p>首次构建通常需要 AppCode、enginecode 和 h3_token；已有配置时部分参数会自动带出</p>
         </div>
 
         <div class="tabs" role="tablist">
@@ -273,7 +273,7 @@
 
             <div class="tab-panel" id="enginecode">
                 <div class="summary">
-                    <strong>enginecode</strong> 是企业引擎编码。氚云接口请求现在要求在 Headers 中携带该参数。
+                    <strong>enginecode</strong> 是企业引擎编码。氚云接口请求现在要求在 Headers 中携带该参数。如果当前“氚云代码”目录下所有已有应用使用同一个非空 enginecode,构建表单会自动带出并设为只读；否则请手动填写。
                 </div>
 
                 <div class="step">
@@ -303,7 +303,7 @@
                         <ol>
                             <li>在系统集成页面找到 <span class="code">EngineCode</span> 或企业引擎编码。</li>
                             <li>复制完整内容。</li>
-                            <li>回到 VSCode，粘贴到构建表单的 <strong>企业引擎编码 enginecode</strong> 输入框。</li>
+                             <li>回到 VSCode，粘贴到构建表单的 <strong>企业引擎编码 enginecode</strong> 输入框。如果构建表单已经自动带出且为只读,无需重复填写。</li>
                         </ol>
                         <div class="field-card">
                             <div class="field-name">填写位置</div>
@@ -318,7 +318,7 @@
 
             <div class="tab-panel" id="h3Token">
                 <div class="summary">
-                    <strong>h3_token</strong> 是当前浏览器登录氚云后的认证 Token。插件会把它保存到“氚云代码”目录下的 <span class="code">.h3token</span>，并自动加入该目录下的 <span class="code">.gitignore</span>。
+                    <strong>h3_token</strong> 是当前浏览器登录氚云后的认证 Token。插件会把它保存到“氚云代码”目录下的 <span class="code">.h3token</span>，并自动加入该目录下的 <span class="code">.gitignore</span>。如果当前工作区就是“氚云代码”目录且根目录已有 <span class="code">cmax.json</span> 和 <span class="code">.h3token</span>,构建表单会自动带出 Token,但 Token 始终可以修改。
                 </div>
 
                 <div class="step">
@@ -365,7 +365,7 @@
                         <ol style="margin-top: 15px;">
                             <li>切换到 <strong>Application</strong> 或 <strong>Storage</strong> 标签。</li>
                             <li>在左侧菜单展开 <strong>Storage</strong> → <strong>Cookies</strong>。</li>
-                            <li>点击氚云平台的域名：<span class="code">www.h3yun.com</span>。</li>
+                             <li>点击当前登录的氚云平台域名。</li>
                             <li>在右侧列表中找到 <span class="code">h3_token</span>。</li>
                             <li>复制其 <strong>Value</strong> 列的完整内容。</li>
                         </ol>
@@ -383,11 +383,11 @@
                     <div class="step-content">
                         <ol>
                             <li>回到 VSCode 的构建表单。</li>
-                            <li>将复制的 Token 粘贴到 <strong>h3_token</strong> 输入框。</li>
+                             <li>将复制的 Token 粘贴到 <strong>h3_token</strong> 输入框；如果输入框已有自动带出的 Token,确认无误后也可以直接使用。</li>
                             <li>点击 <strong>开始构建</strong>。</li>
                         </ol>
                         <div class="warning">
-                            <strong>注意:</strong> Token 有一定有效期。如果后续同步时提示失效，请重新获取新的 Token。
+                             <strong>注意:</strong> Token 有一定有效期。如果构建时验证提示 Token 已失效,当前构建页面不会关闭,直接替换 Token 后再次点击“开始构建”即可；后续同步时提示失效时也请重新获取新的 Token。
                         </div>
                     </div>
                 </div>

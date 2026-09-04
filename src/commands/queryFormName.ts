@@ -13,7 +13,7 @@ function findAppFolderPath(documentUri: vscode.Uri): string | undefined {
   let folderPath = path.dirname(documentUri.fsPath);
 
   while (true) {
-    if (fileService.hasCmaxConfig(folderPath)) {
+    if (path.basename(path.dirname(folderPath)) === CODE_FOLDER_NAME) {
       return folderPath;
     }
 
@@ -21,7 +21,6 @@ function findAppFolderPath(documentUri: vscode.Uri): string | undefined {
     if (parentFolderPath === folderPath) {
       return undefined;
     }
-
     folderPath = parentFolderPath;
   }
 }
@@ -55,7 +54,7 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
 
   const appFolderPath = findAppFolderPath(activeEditor.document.uri);
   if (!appFolderPath) {
-    vscode.window.showWarningMessage('当前文件不在包含 cmax.json 的氚云应用目录中');
+    vscode.window.showWarningMessage('当前文件不在氚云代码目录下的应用中');
     return;
   }
 
@@ -67,7 +66,12 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
   }
 
   try {
-    const config = fileService.readCmaxConfig(appFolderPath);
+    const codeFolderPath = path.dirname(appFolderPath);
+    const appSuffix = path.basename(appFolderPath).match(/\((a[0-9a-z]{5,32})\)$/)?.[1];
+    if (!appSuffix) {
+      throw new Error('无法从应用目录名称中识别应用后缀');
+    }
+    const config = fileService.readCmaxConfig(codeFolderPath, appSuffix);
     const localForm = Object.entries(config.forms).find(([, form]) => form.formCode === formCode);
     if (localForm) {
       const [suffix, form] = localForm;
@@ -83,7 +87,7 @@ export async function handleQueryFormName(uri?: vscode.Uri): Promise<void> {
 
     let token: string;
     try {
-      token = fileService.readToken(path.dirname(appFolderPath));
+      token = fileService.readToken(codeFolderPath);
     } catch (error) {
       await promptForUpdateGuide(
         '“氚云代码”目录下没有可用的 .h3token 文件，可能仍在使用旧版目录方案。请查看更新指南，并重新构建一次项目。'

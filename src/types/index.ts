@@ -37,10 +37,18 @@ export interface CmaxConfig {
   engineCode: string;                   // 企业引擎编码
   h3yunApiVersion?: H3YunApiVersion;    // 氚云接口版本,缺省使用老版本
   appName: string;                      // 应用名称
-  appSuffix?: string;                   // 应用文件夹随机后缀 (a+5位)
-  forms: Record<string, CmaxFormEntry>; // 表单配置, key 为随机后缀 (f+5位)
+  appSuffix?: string;                   // 应用文件夹编码后缀 (a+MD5前缀)
+  forms: Record<string, CmaxFormEntry>; // 表单配置, key 为编码后缀 (f+MD5前缀)
   lastSyncTime?: string;                // 最后同步时间
   systemUserId?: string;                // System 用户的 ObjectId,用于 MCP 执行 SQL 查询
+}
+
+/**
+ * 氚云代码目录级配置文件结构。
+ */
+export interface CmaxWorkspaceConfig {
+  version: 2;
+  apps: Record<string, CmaxConfig>;
 }
 
 /**

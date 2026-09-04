@@ -61,7 +61,7 @@ async function promptForEngineCode(message: string): Promise<string | undefined>
   return undefined;
 }
 
-async function ensureEngineCode(config: CmaxConfig, appFolderPath: string): Promise<string | undefined> {
+async function ensureEngineCode(config: CmaxConfig, codeFolderPath: string, appSuffix: string): Promise<string | undefined> {
   if (config.engineCode && config.engineCode.trim()) {
     return config.engineCode.trim();
   }
@@ -73,7 +73,8 @@ async function ensureEngineCode(config: CmaxConfig, appFolderPath: string): Prom
 
   config.engineCode = engineCode;
   fileService.createCmaxConfig(
-    appFolderPath,
+    codeFolderPath,
+    appSuffix,
     config.appCode,
     config.engineCode,
     config.appName,
@@ -193,12 +194,29 @@ function findFormByCode(
   return undefined;
 }
 
-async function syncAppFolderName(appFolderPath: string, config: CmaxConfig): Promise<string> {
+async function syncAppFolderName(
+  appFolderPath: string,
+  codeFolderPath: string,
+  appSuffix: string,
+  config: CmaxConfig
+): Promise<string> {
   const latestApplication = await h3yunApi.getApplication(config.appCode);
 
   if (config.appSuffix && latestApplication.appName !== config.appName) {
+    fileService.saveFailedNodesReport(codeFolderPath, config.appName, []);
     const renamedFolderPath = fileService.renameFolderWithSuffix(appFolderPath, latestApplication.appName, config.appSuffix);
     config.appName = latestApplication.appName;
+    fileService.createCmaxConfig(
+      codeFolderPath,
+      appSuffix,
+      config.appCode,
+      config.engineCode,
+      config.appName,
+      config.appSuffix,
+      config.forms,
+      config.h3yunApiVersion,
+      config.systemUserId
+    );
     return renamedFolderPath;
   }
 
@@ -230,33 +248,38 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   }
 
   // 检查是否包含 cmax.json
-  if (!fileService.hasCmaxConfig(appFolderPath)) {
-    vscode.window.showErrorMessage('所选文件夹不是有效的氚云应用文件夹(缺少 cmax.json)');
+  if (path.basename(path.dirname(appFolderPath)) !== CODE_FOLDER_NAME) {
+    vscode.window.showErrorMessage('所选文件夹不是有效的氚云应用文件夹(不在氚云代码目录下)');
+    return;
+  }
+
+  codeFolderPath = path.dirname(appFolderPath);
+  const appSuffixMatch = path.basename(appFolderPath).match(/\((a[0-9a-z]{5,32})\)$/);
+  if (!appSuffixMatch) {
+    vscode.window.showErrorMessage('所选文件夹不是有效的氚云应用文件夹(缺少应用后缀)');
+    return;
+  }
+  const appSuffix = appSuffixMatch[1];
+  if (!fileService.hasCmaxConfig(codeFolderPath)) {
+    vscode.window.showErrorMessage('所选氚云代码目录缺少 cmax.json');
     return;
   }
 
   // 读取配置
   let config: CmaxConfig;
   try {
-    config = fileService.readCmaxConfig(appFolderPath);
+    config = fileService.readCmaxConfig(codeFolderPath, appSuffix);
   } catch (error) {
     vscode.window.showErrorMessage(`读取配置文件失败: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
 
-  if (path.basename(path.dirname(appFolderPath)) !== CODE_FOLDER_NAME) {
-    await promptForUpdateGuide(
-      '当前应用不在“氚云代码”目录下，可能仍在使用旧版目录方案。请查看更新指南，并重新构建一次项目。'
-    );
-    return;
-  }
-  codeFolderPath = path.dirname(appFolderPath);
   fileService.ensureGitIgnore(codeFolderPath);
 
   // 每次同步开始时清理上一次同步留下的失败报告,本次如有异常会重新生成。
-  fileService.deleteFileIfExists(path.join(appFolderPath, 'failed-nodes.md'));
+  fileService.saveFailedNodesReport(codeFolderPath, config.appName, []);
 
-  const engineCode = await ensureEngineCode(config, appFolderPath);
+  const engineCode = await ensureEngineCode(config, codeFolderPath, appSuffix);
   if (!engineCode) {
     vscode.window.showInformationMessage('已取消同步');
     return;
@@ -295,7 +318,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
       if (systemUserId) {
         config.systemUserId = systemUserId;
         fileService.createCmaxConfig(
-          appFolderPath,
+          codeFolderPath,
+          appSuffix,
           config.appCode,
           config.engineCode,
           config.appName,
@@ -311,7 +335,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   }
 
   try {
-    appFolderPath = await syncAppFolderName(appFolderPath, config);
+    appFolderPath = await syncAppFolderName(appFolderPath, codeFolderPath, appSuffix, config);
   } catch (error) {
     vscode.window.showWarningMessage(`获取或更新应用名称失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -358,12 +382,12 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           }
         }
 
-        appFolderPath = await syncAppFolderName(appFolderPath, config);
+        appFolderPath = await syncAppFolderName(appFolderPath, codeFolderPath, appSuffix, config);
         const loadFormFailures = h3yunApi.consumeLoadFormFailures();
 
         if (loadFormFailures.length > 0) {
           const failureNames = loadFormFailures.map((failure) => failure.name).join('、');
-          fileService.saveFailedNodesReport(appFolderPath, loadFormFailures);
+          fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
           vscode.window.showWarningMessage(
             `本次同步无法确认以下表单的最新结构: ${failureNames}\n请重试同步,本次不会删除任何表单文件夹。`,
             { modal: true }
@@ -373,18 +397,23 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
+          for (const suffix of Object.keys(config.forms || {})) {
+            const formFolderPath = path.join(appFolderPath, buildFolderName(config.forms[suffix].formName, suffix));
+            fileService.deleteFolderIfExists(formFolderPath);
+          }
           fileService.createCmaxConfig(
-            appFolderPath,
+            codeFolderPath,
+            appSuffix,
             config.appCode,
             config.engineCode,
             config.appName,
             config.appSuffix || '',
-            config.forms,
+            {},
             config.h3yunApiVersion,
             config.systemUserId
           );
-          fileService.updateLastSyncTime(appFolderPath);
-          fileService.saveFailedNodesReport(appFolderPath, loadFormFailures);
+          fileService.updateLastSyncTime(codeFolderPath, appSuffix);
+          fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
           syncSummary = '同步完成! 该应用下没有表单';
           return;
         }
@@ -402,6 +431,17 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           );
           fileService.renameFolderWithSuffix(currentFormFolderPath, form.formName, existingEntry.suffix);
           existingEntry.entry.formName = form.formName;
+          fileService.createCmaxConfig(
+            codeFolderPath,
+            appSuffix,
+            config.appCode,
+            config.engineCode,
+            config.appName,
+            config.appSuffix || '',
+            config.forms,
+            config.h3yunApiVersion,
+            config.systemUserId
+          );
         }
         
         // 首先获取所有表单的代码以便检测冲突
@@ -454,7 +494,9 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         // Step 3: 循环处理每个表单
         const updatedFormsRecord: Record<string, CmaxFormEntry> = {};
-        const usedFormSuffixes = new Set(Object.keys(config.forms));
+        const usedFormMappings = new Map(
+          Object.entries(config.forms).map(([suffix, entry]) => [suffix, entry.formCode] as [string, string])
+        );
         const totalForms = forms.length;
         let successCount = 0;
         let failCount = 0;
@@ -467,23 +509,36 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             increment: undefined
           });
 
+          let createdFormFolderPath: string | undefined;
+          const existingEntry = findFormByCode(config.forms, form.formCode);
           try {
-            let formFolderPath: string;
-            let formSuffix: string;
-            const existingEntry = findFormByCode(config.forms, form.formCode);
+            let formFolderPath: string | undefined;
+            let formSuffix: string | undefined;
 
             if (existingEntry) {
               formSuffix = existingEntry.suffix;
               formFolderPath = path.join(appFolderPath, buildFolderName(existingEntry.entry.formName, formSuffix));
-            } else {
-              const result = fileService.createFormFolder(appFolderPath, form.formName, usedFormSuffixes);
-              formFolderPath = result.folderPath;
-              formSuffix = result.suffix;
             }
 
             const codes = formCodesMap.get(form.formCode);
             if (!codes) {
               throw new Error('无法获取表单代码');
+            }
+
+            if (!existingEntry) {
+              const result = fileService.createFormFolder(
+                appFolderPath,
+                form.formName,
+                form.formCode,
+                usedFormMappings
+              );
+              formFolderPath = result.folderPath;
+              formSuffix = result.suffix;
+              createdFormFolderPath = formFolderPath;
+            }
+
+            if (!formFolderPath || !formSuffix) {
+              throw new Error('无法确定表单目录');
             }
 
             for (const [filename, remoteContent] of Object.entries(codes)) {
@@ -517,7 +572,9 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             successCount++;
           } catch (error) {
             console.error(`同步表单 "${form.formName}" 失败:`, error);
-            const existingEntry = findFormByCode(config.forms, form.formCode);
+            if (createdFormFolderPath && !existingEntry) {
+              fileService.deleteFolderIfExists(createdFormFolderPath);
+            }
             if (existingEntry) {
               // 同步失败时保留既有映射，避免下次同步把该目录当成已删除表单。
               updatedFormsRecord[existingEntry.suffix] = existingEntry.entry;
@@ -540,7 +597,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           );
 
           for (const folderName of listSubfolders(appFolderPath)) {
-            const suffixMatch = folderName.match(/\((f[0-9a-z]{5})\)$/);
+            const suffixMatch = folderName.match(/\((f[0-9a-z]{5,32})\)$/);
             if (!suffixMatch || !deletedFormSuffixes.has(suffixMatch[1])) continue;
 
             fileService.deleteFolderIfExists(path.join(appFolderPath, folderName));
@@ -551,7 +608,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         // Step 4: 更新 cmax.json 配置文件
         progress.report({ message: '正在更新配置文件...', increment: 95 });
         fileService.createCmaxConfig(
-          appFolderPath,
+          codeFolderPath,
+          appSuffix,
           config.appCode,
           config.engineCode,
           config.appName,
@@ -560,8 +618,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.h3yunApiVersion,
           config.systemUserId
         );
-        fileService.updateLastSyncTime(appFolderPath);
-        fileService.saveFailedNodesReport(appFolderPath, loadFormFailures);
+        fileService.updateLastSyncTime(codeFolderPath, appSuffix);
+         fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
 
         progress.report({ message: '完成!', increment: 100 });
 

@@ -1,12 +1,11 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { CmaxFormEntry } from '../types';
-import { createFolder, getCodeFolderPath } from '../utils/folderUtils';
-
-const INITIAL_COMMIT_MESSAGE = '从氚云构建项目';
+import { buildFolderName, CODE_FOLDER_NAME, createFolder, getCodeFolderPath } from '../utils/folderUtils';
 
 /**
  * 构建项目命令处理器
@@ -23,8 +22,45 @@ export async function handleBuildProject(): Promise<void> {
   const codeFolderPath = getCodeFolderPath(workspaceRoot);
   createFolder(codeFolderPath);
 
+  let presetEngineCode: string | undefined;
+  let presetToken: string | undefined;
+  if (path.basename(workspaceRoot) === CODE_FOLDER_NAME) {
+    let hasWorkspaceConfig = false;
+    try {
+      const workspaceConfig = fileService.readWorkspaceConfig(codeFolderPath);
+      hasWorkspaceConfig = fileService.hasCmaxConfig(codeFolderPath);
+      if (hasWorkspaceConfig) {
+        const appConfigs = Object.values(workspaceConfig.apps);
+        const engineCodes = appConfigs.map((config) => config.engineCode && config.engineCode.trim());
+        if (appConfigs.length > 0 && engineCodes.every((engineCode) => !!engineCode)) {
+          const uniqueEngineCodes = Array.from(new Set(engineCodes));
+          if (uniqueEngineCodes.length === 1) {
+            presetEngineCode = uniqueEngineCodes[0];
+          }
+        }
+      }
+    } catch {
+      // 根配置不存在或无法读取时,继续使用空白构建表单。
+    }
+
+    try {
+      presetToken = fileService.readToken(codeFolderPath);
+    } catch {
+      // Token 不存在时由用户在构建表单中输入。
+    }
+
+    if (!hasWorkspaceConfig) {
+      presetEngineCode = undefined;
+      presetToken = undefined;
+    }
+  }
+
   // 显示输入表单
-  const inputData = await showBuildProjectForm();
+  const inputData = await showBuildProjectForm({
+    engineCode: presetEngineCode,
+    engineCodeReadonly: !!presetEngineCode,
+    h3Token: presetToken
+  });
   
   if (!inputData) {
     return; // 用户取消
@@ -37,6 +73,7 @@ export async function handleBuildProject(): Promise<void> {
   h3yunApi.setToken(h3Token, engineCode);
 
   let builtAppFolderPath: string | undefined;
+  let builtAppName: string | undefined;
   let buildSummary: string | undefined;
 
   // 显示进度条
@@ -78,9 +115,11 @@ export async function handleBuildProject(): Promise<void> {
         progress.report({ message: `正在创建应用文件夹: ${application.appName}...`, increment: 10 });
         const { folderPath: appFolderPath, suffix: appSuffix } = fileService.createAppFolder(
           codeFolderPath,
-          application.appName
+          application.appName,
+          application.appCode
         );
         builtAppFolderPath = appFolderPath;
+        builtAppName = application.appName;
 
         const appFolderName = `${application.appName}(${appSuffix})`;
         vscode.window.showInformationMessage(`已创建应用文件夹: ${appFolderName}`);
@@ -88,20 +127,47 @@ export async function handleBuildProject(): Promise<void> {
         // Step 3: 获取表单列表
         progress.report({ message: '正在获取表单列表...', increment: 10 });
         const forms = await h3yunApi.getForms(appCode);
+        const loadFormFailures = h3yunApi.consumeLoadFormFailures();
+        if (loadFormFailures.length > 0) {
+          const failureNames = loadFormFailures.map((failure) => failure.name).join('、');
+          fileService.saveFailedNodesReport(codeFolderPath, application.appName, loadFormFailures);
+          throw new Error(`无法确认以下表单的最新结构: ${failureNames},已取消本次构建`);
+        }
+
+        const existingConfig = fileService.readWorkspaceConfig(codeFolderPath).apps[appSuffix];
+        if (existingConfig) {
+          if (existingConfig.appName !== application.appName) {
+            fileService.saveFailedNodesReport(codeFolderPath, existingConfig.appName, []);
+          }
+          const currentFormCodes = new Set(forms.map((form) => form.formCode));
+          for (const [suffix, form] of Object.entries(existingConfig.forms || {})) {
+            if (currentFormCodes.has(form.formCode)) continue;
+            fileService.deleteFolderIfExists(path.join(appFolderPath, buildFolderName(form.formName, suffix)));
+          }
+        }
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
-          fileService.createCmaxConfig(appFolderPath, appCode, engineCode, application.appName, appSuffix, {});
+          fileService.createCmaxConfig(codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, {});
           fileService.saveToken(codeFolderPath, h3Token);
           fileService.ensureGitIgnore(codeFolderPath);
-          fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
+           fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
           buildSummary = '项目构建成功! 该应用下没有表单';
           return;
         }
 
         // Step 4: 循环处理每个表单
         const formsRecord: Record<string, CmaxFormEntry> = {};
-        const usedFormSuffixes = new Set<string>();
+        let existingFormConfig: Record<string, CmaxFormEntry> = {};
+        try {
+          existingFormConfig = fileService.readCmaxConfig(codeFolderPath, appSuffix).forms || {};
+        } catch {
+          // 新应用没有既有配置时从空映射开始。
+        }
+        const usedFormMappings = new Map(
+          Object.entries(existingFormConfig)
+            .map(([suffix, entry]) => [suffix, entry.formCode] as [string, string])
+        );
         const totalForms = forms.length;
 
         for (let i = 0; i < totalForms; i++) {
@@ -113,13 +179,13 @@ export async function handleBuildProject(): Promise<void> {
           });
 
           try {
+            const codes = await h3yunApi.getFormAllCodes(form.formCode);
             const { folderPath: formFolderPath, suffix: formSuffix } = fileService.createFormFolder(
               appFolderPath,
               form.formName,
-              usedFormSuffixes
+              form.formCode,
+              usedFormMappings
             );
-
-            const codes = await h3yunApi.getFormAllCodes(form.formCode);
             fileService.saveFormCodes(formFolderPath, codes);
 
             formsRecord[formSuffix] = {
@@ -128,6 +194,11 @@ export async function handleBuildProject(): Promise<void> {
             };
           } catch (error) {
             console.error(`处理表单 "${form.formName}" 失败:`, error);
+            const existingEntry = Object.entries(existingFormConfig)
+              .find(([, entry]) => entry.formCode === form.formCode);
+            if (existingEntry) {
+              formsRecord[existingEntry[0]] = existingEntry[1];
+            }
             vscode.window.showWarningMessage(`表单 "${form.formName}" 处理失败: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
@@ -144,12 +215,12 @@ export async function handleBuildProject(): Promise<void> {
         // Step 6: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 90 });
         fileService.createCmaxConfig(
-          appFolderPath, appCode, engineCode, application.appName, appSuffix, formsRecord,
+          codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, formsRecord,
           undefined, systemUserId || undefined
         );
         fileService.saveToken(codeFolderPath, h3Token);
         fileService.ensureGitIgnore(codeFolderPath);
-        fileService.saveFailedNodesReport(appFolderPath, h3yunApi.consumeLoadFormFailures());
+         fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
 
         progress.report({ message: '完成!', increment: 100 });
 
@@ -168,13 +239,13 @@ export async function handleBuildProject(): Promise<void> {
 
   const repositoryExists = await gitService.hasRepository(codeFolderPath);
   const gitAction = await vscode.window.showInformationMessage(
-    `${buildSummary}\n\n${repositoryExists ? '是否要提交本次应用构建文件?' : '是否要初始化 Git 仓库并提交本次应用构建文件?'}`,
+    `${buildSummary}\n\n是否要提交添加 ${builtAppName} 应用的构建文件?`,
     { modal: true },
-    repositoryExists ? '提交' : '初始化并提交',
+    '提交',
     '跳过'
   );
 
-  if (gitAction !== (repositoryExists ? '提交' : '初始化并提交')) {
+  if (gitAction !== '提交') {
     vscode.window.showInformationMessage(buildSummary);
     return;
   }
@@ -183,17 +254,17 @@ export async function handleBuildProject(): Promise<void> {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: repositoryExists ? '正在提交应用构建文件' : '正在初始化 Git 仓库并提交项目文件',
+        title: '正在提交应用构建文件',
         cancellable: false
       },
       async (progress) => {
-        progress.report({ message: repositoryExists ? '正在执行 git add 和 git commit...' : '正在执行 git init、git add 和 git commit...' });
-        await gitService.initAndCommit(codeFolderPath, INITIAL_COMMIT_MESSAGE, builtAppFolderPath!);
+        progress.report({ message: repositoryExists ? '正在执行 git add 和 git commit...' : '正在初始化 Git 仓库并提交...' });
+        await gitService.initAndCommit(codeFolderPath, `添加${builtAppName}应用`, builtAppFolderPath!);
       }
     );
 
     vscode.window.showInformationMessage(
-      `${buildSummary}\n${repositoryExists ? '应用文件已追加提交到现有 Git 仓库' : 'Git 仓库已初始化并完成首次提交'}`
+      `${buildSummary}\n应用文件已提交，提交信息：添加${builtAppName}应用`
     );
   } catch (error) {
     vscode.window.showWarningMessage(
