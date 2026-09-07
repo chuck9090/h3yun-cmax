@@ -35,7 +35,6 @@ export interface H3FormField {
 export interface CmaxConfig {
   appCode: string;                      // 应用编码
   appName: string;                      // 应用名称
-  appSuffix?: string;                   // 应用文件夹编码后缀 (a+MD5前缀)
   forms: Record<string, CmaxFormEntry>; // 表单配置, key 为编码后缀 (f+MD5前缀)
   lastSyncTime?: string;                // 最后同步时间
 }

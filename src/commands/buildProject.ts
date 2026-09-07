@@ -160,7 +160,7 @@ export async function handleBuildProject(): Promise<void> {
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
           fileService.createCmaxConfig(
-            codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, {},
+            codeFolderPath, appSuffix, appCode, engineCode, application.appName, {},
             workspaceConfig.h3yunApiVersion, systemUserId || undefined
           );
           fileService.saveToken(codeFolderPath, h3Token);
@@ -220,7 +220,7 @@ export async function handleBuildProject(): Promise<void> {
         // Step 6: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 90 });
         fileService.createCmaxConfig(
-          codeFolderPath, appSuffix, appCode, engineCode, application.appName, appSuffix, formsRecord,
+          codeFolderPath, appSuffix, appCode, engineCode, application.appName, formsRecord,
           workspaceConfig.h3yunApiVersion, systemUserId || undefined
         );
         fileService.saveToken(codeFolderPath, h3Token);

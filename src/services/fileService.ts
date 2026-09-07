@@ -83,21 +83,16 @@ export class FileService {
   createAppFolder(codeFolderPath: string, appName: string, appCode: string): { folderPath: string; suffix: string } {
     const existingMappings = new Map<string, string>();
     const workspaceConfig = this.readWorkspaceConfig(codeFolderPath);
-    for (const config of Object.values(workspaceConfig.apps)) {
+    for (const [appSuffix, config] of Object.entries(workspaceConfig.apps)) {
       try {
-        if (!config.appSuffix) {
-          continue;
-        }
-        if (config.appSuffix) {
-          existingMappings.set(config.appSuffix, config.appCode);
-        }
-        if (config.appCode === appCode && config.appSuffix) {
-          const existingFolderPath = path.join(codeFolderPath, buildFolderName(config.appName, config.appSuffix));
+        existingMappings.set(appSuffix, config.appCode);
+        if (config.appCode === appCode) {
+          const existingFolderPath = path.join(codeFolderPath, buildFolderName(config.appName, appSuffix));
           const folderPath = folderExists(existingFolderPath) && config.appName !== appName
-            ? this.renameFolderWithSuffix(existingFolderPath, appName, config.appSuffix)
-            : path.join(codeFolderPath, buildFolderName(appName, config.appSuffix));
+            ? this.renameFolderWithSuffix(existingFolderPath, appName, appSuffix)
+            : path.join(codeFolderPath, buildFolderName(appName, appSuffix));
           createFolder(folderPath);
-          return { folderPath, suffix: config.appSuffix };
+          return { folderPath, suffix: appSuffix };
         }
       } catch {
         // 忽略无法读取的其他应用配置,不影响当前构建。
@@ -281,7 +276,6 @@ export class FileService {
    * @param appCode 应用编码
    * @param engineCode 企业引擎编码
    * @param appName 应用名称
-   * @param appSuffix 应用文件夹编码后缀
    * @param forms 表单配置记录, key 为编码后缀
    * @param h3yunApiVersion 氚云接口版本
    */
@@ -291,7 +285,6 @@ export class FileService {
     appCode: string,
     engineCode: string,
     appName: string,
-    appSuffix: string,
     forms: Record<string, CmaxFormEntry>,
     h3yunApiVersion: H3YunApiVersion = DEFAULT_H3YUN_API_VERSION,
     systemUserId?: string
@@ -299,7 +292,6 @@ export class FileService {
     const config: CmaxConfig = {
       appCode,
       appName,
-      appSuffix,
       lastSyncTime: new Date().toISOString(),
       forms,
     };
@@ -390,12 +382,19 @@ export class FileService {
     }
 
     const config = this.readJsonFile<Partial<CmaxWorkspaceConfig>>(configPath);
+    const apps = Object.fromEntries(
+      Object.entries(config.apps || {}).map(([appSuffix, appConfig]) => {
+        const normalizedConfig = { ...(appConfig as CmaxConfig & { appSuffix?: string }) };
+        delete normalizedConfig.appSuffix;
+        return [appSuffix, normalizedConfig];
+      })
+    );
     return {
       version: 2,
       engineCode: config.engineCode,
       h3yunApiVersion: config.h3yunApiVersion === 'new' ? 'new' : DEFAULT_H3YUN_API_VERSION,
       systemUserId: config.systemUserId,
-      apps: config.apps || {}
+      apps
     };
   }
 
@@ -403,7 +402,14 @@ export class FileService {
    * 保存氚云代码目录级 cmax.json。
    */
   saveWorkspaceConfig(codeFolderPath: string, config: CmaxWorkspaceConfig): void {
-    this.saveFile(path.join(codeFolderPath, CMAX_CONFIG_FILENAME), JSON.stringify(config, null, 2));
+    const orderedConfig: CmaxWorkspaceConfig = {
+      version: 2,
+      ...(config.engineCode ? { engineCode: config.engineCode } : {}),
+      ...(config.h3yunApiVersion ? { h3yunApiVersion: config.h3yunApiVersion } : {}),
+      ...(config.systemUserId ? { systemUserId: config.systemUserId } : {}),
+      apps: config.apps
+    };
+    this.saveFile(path.join(codeFolderPath, CMAX_CONFIG_FILENAME), JSON.stringify(orderedConfig, null, 2));
   }
 
   /**
@@ -435,9 +441,9 @@ export class FileService {
     }
 
     const workspaceConfig = this.readWorkspaceConfig(projectFolderPath);
-    return Object.values(workspaceConfig.apps)
-      .map((config) => config.appSuffix ? path.join(projectFolderPath, buildFolderName(config.appName, config.appSuffix)) : undefined)
-      .filter((folderPath): folderPath is string => !!folderPath && folderExists(folderPath))
+    return Object.entries(workspaceConfig.apps)
+      .map(([appSuffix, config]) => path.join(projectFolderPath, buildFolderName(config.appName, appSuffix)))
+      .filter((folderPath) => folderExists(folderPath))
       .sort((left, right) => left.localeCompare(right));
   }
 

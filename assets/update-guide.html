@@ -252,7 +252,6 @@
     "a1a2b3c": {
       "appCode": "应用编码",
       "appName": "应用名称",
-      "appSuffix": "a1a2b3c",
       "forms": {}
     }
   }
@@ -284,7 +283,8 @@
                 </div>
                 <div class="step-content">
                     <p><span class="code">.h3token</span> 统一保存在“氚云代码”目录，不再放在每个应用目录中。</p>
-                    <p><span class="code">cmax.json</span> 统一保存在“氚云代码”目录,根对象保存共享参数,并按应用后缀集中管理所有应用、表单和同步配置。</p>
+                    <p><span class="code">cmax.json</span> 统一保存在“氚云代码”目录,根对象按 <span class="code">version</span>、<span class="code">engineCode</span>、<span class="code">h3yunApiVersion</span>、<span class="code">systemUserId</span>、<span class="code">apps</span> 顺序保存共享参数;应用后缀由 <span class="code">apps</span> 的 key 表示,应用对象不再重复保存 <span class="code">appSuffix</span>。</p>
+                    <p>同步时只有当前应用目录存在代码变更才会询问 Git 提交;根目录 <span class="code">cmax.json</span> 无论发生何种变化都不会单独触发提交询问。</p>
                     <p><span class="code">.gitignore</span> 和 Git 仓库也统一放在“氚云代码”目录中，多个应用共用一个 Git 仓库。</p>
                     <div class="warning">
                         <strong>注意:</strong> 请不要把 <span class="code">.h3token</span> 提交到公开代码仓库。

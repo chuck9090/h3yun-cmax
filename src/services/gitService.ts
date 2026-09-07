@@ -94,9 +94,10 @@ export class GitService {
   }
 
   /**
-   * 检查当前应用代码或根 cmax.json 是否存在工作区变更。
+   * 只检查当前应用目录是否存在代码变更。
+   * 根目录 cmax.json 的变化不触发提交询问。
    */
-  async hasChangesExcludingCmaxConfig(
+  async hasApplicationChanges(
     repositoryPath: string,
     targetFolderPath?: string
   ): Promise<boolean> {
@@ -104,21 +105,9 @@ export class GitService {
     try {
       const { stdout } = await execFileAsync(
         'git',
-        [
-          'status',
-          '--porcelain',
-          '--untracked-files=all',
-          '--',
-          target,
-           '.gitignore',
-           'cmax.json'
-        ],
-        {
-          cwd: repositoryPath,
-          maxBuffer: 1024 * 1024 * 10
-        }
+        ['status', '--porcelain', '--untracked-files=all', '--', target],
+        { cwd: repositoryPath, maxBuffer: 1024 * 1024 * 10 }
       );
-
       return stdout.trim().length > 0;
     } catch {
       // 尚未初始化 Git 时仍提示用户，以便保留首次提交能力。

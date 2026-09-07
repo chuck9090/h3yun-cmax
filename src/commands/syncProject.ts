@@ -193,17 +193,16 @@ async function syncAppFolderName(
 ): Promise<string> {
   const latestApplication = await h3yunApi.getApplication(config.appCode);
 
-  if (config.appSuffix && latestApplication.appName !== config.appName) {
+  if (latestApplication.appName !== config.appName) {
     fileService.saveFailedNodesReport(codeFolderPath, config.appName, []);
-    const renamedFolderPath = fileService.renameFolderWithSuffix(appFolderPath, latestApplication.appName, config.appSuffix);
+    const renamedFolderPath = fileService.renameFolderWithSuffix(appFolderPath, latestApplication.appName, appSuffix);
     config.appName = latestApplication.appName;
     fileService.createCmaxConfig(
       codeFolderPath,
       appSuffix,
       config.appCode,
-       workspaceConfig.engineCode || '',
+      workspaceConfig.engineCode || '',
       config.appName,
-      config.appSuffix,
       config.forms,
        workspaceConfig.h3yunApiVersion,
        workspaceConfig.systemUserId
@@ -277,7 +276,6 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     vscode.window.showInformationMessage('已取消同步');
     return;
   }
-
   let h3Token: string;
   try {
     h3Token = fileService.readToken(codeFolderPath);
@@ -378,7 +376,6 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             config.appCode,
             workspaceConfig.engineCode || '',
             config.appName,
-            config.appSuffix || '',
             {},
             workspaceConfig.h3yunApiVersion,
             workspaceConfig.systemUserId
@@ -408,7 +405,6 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             config.appCode,
             workspaceConfig.engineCode || '',
             config.appName,
-            config.appSuffix || '',
             config.forms,
             workspaceConfig.h3yunApiVersion,
             workspaceConfig.systemUserId
@@ -584,7 +580,6 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.appCode,
           workspaceConfig.engineCode || '',
           config.appName,
-          config.appSuffix || '',
           updatedFormsRecord,
           workspaceConfig.h3yunApiVersion,
           workspaceConfig.systemUserId
@@ -612,7 +607,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     }
   );
 
-  if (syncSummary && await gitService.hasChangesExcludingCmaxConfig(codeFolderPath, appFolderPath)) {
+  if (syncSummary && await gitService.hasApplicationChanges(codeFolderPath, appFolderPath)) {
     await promptAndCommit(codeFolderPath, appFolderPath, syncSummary);
   }
 }
