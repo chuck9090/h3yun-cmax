@@ -221,7 +221,14 @@ function getWebviewContent(defaultMessage: string, summary?: string): string {
     cancel.addEventListener('click', () => vscode.postMessage({ command: 'cancel' }));
     input.addEventListener('input', () => { error.textContent = ''; });
     input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        vscode.postMessage({ command: 'cancel' });
+        return;
+      }
+
       if (event.key === 'Enter') {
+        event.preventDefault();
         submitMessage();
       }
     });

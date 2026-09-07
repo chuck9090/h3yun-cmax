@@ -52,11 +52,17 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
 
     // 设置 HTML 内容
     panel.webview.html = getWebviewContent(options);
+    let isSubmitting = false;
+    let isClosed = false;
 
     // 处理消息
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case 'submit':
+          if (isClosed || isSubmitting) {
+            return;
+          }
+
           // 验证输入
           if (!message.appCode || !message.appCode.trim()) {
             panel.webview.postMessage({ 
@@ -86,6 +92,7 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
           }
 
           // 验证 Token 有效性
+          isSubmitting = true;
           panel.webview.postMessage({ command: 'validating' });
           
           try {
@@ -94,8 +101,13 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
             
             // 尝试获取应用信息来验证 Token
             await h3yunApi.getApplication(message.appCode.trim());
+
+            if (isClosed) {
+              return;
+            }
             
             // 验证成功,返回数据
+            isClosed = true;
             resolve({
               appCode: message.appCode.trim(),
               engineCode: message.engineCode.trim(),
@@ -104,6 +116,11 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
             
             panel.dispose();
           } catch (error) {
+            if (isClosed) {
+              return;
+            }
+
+            isSubmitting = false;
             const errorMsg = error instanceof Error ? error.message : String(error);
             
             // 判断错误类型
@@ -132,6 +149,10 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
           break;
           
         case 'cancel':
+          if (isClosed) {
+            return;
+          }
+          isClosed = true;
           resolve(null);
           panel.dispose();
           break;
@@ -153,6 +174,7 @@ export function showBuildProjectForm(options: BuildProjectFormOptions = {}): Pro
 
     // 处理面板关闭
     panel.onDidDispose(() => {
+      isClosed = true;
       resolve(null);
     });
   });
@@ -411,6 +433,8 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
                     placeholder="例如: APP001"
                     value="${appCode}"
                     ${appCodeReadonly}
+                    tabindex="1"
+                    autofocus
                     autocomplete="off"
                 />
                 <div class="error-message" id="appCodeError"></div>
@@ -427,6 +451,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
                     placeholder="系统管理 > 系统集成中的企业引擎编码"
                     value="${engineCode}"
                     ${engineCodeReadonly}
+                    tabindex="2"
                     autocomplete="off"
                 />
                 <div class="error-message" id="engineCodeError"></div>
@@ -442,6 +467,7 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
                     class="form-input" 
                     placeholder="从浏览器 Cookie 中复制的 h3_token 值"
                     value="${h3Token}"
+                    tabindex="3"
                     autocomplete="off"
                 />
                 <div class="error-message" id="h3TokenError"></div>
@@ -474,7 +500,35 @@ function getWebviewContent(options: BuildProjectFormOptions): string {
         const cancelBtn = document.getElementById('cancelBtn');
         const parameterHelpLink = document.getElementById('parameterHelpLink');
         const loadingOverlay = document.getElementById('loadingOverlay');
-        
+        const formInputs = [appCodeInput, engineCodeInput, h3TokenInput];
+
+        // Webview 打开后默认聚焦应用编码,并限制三个输入框之间的键盘导航。
+        appCodeInput.focus();
+        formInputs.forEach((input, index) => {
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    vscode.postMessage({ command: 'cancel' });
+                    return;
+                }
+
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    form.requestSubmit();
+                    return;
+                }
+
+                if (event.key !== 'Tab') {
+                    return;
+                }
+
+                event.preventDefault();
+                const direction = event.shiftKey ? -1 : 1;
+                const nextIndex = (index + direction + formInputs.length) % formInputs.length;
+                formInputs[nextIndex].focus();
+            });
+        });
+
         // 提交表单
         form.addEventListener('submit', (e) => {
             e.preventDefault();
