@@ -4,6 +4,8 @@ interface FieldInfo {
   controlType: string;
   valueType: string;
   databaseDescription: string;
+  /** 是否允许用设计内容里同编码控件的名称覆盖默认名称。仅针对表单设计器里可拖入的系统控件。 */
+  mutableName?: boolean;
 }
 
 interface ChildTableInfo {
@@ -45,13 +47,19 @@ interface SchemaResponseData {
 
 type UnknownRecord = Record<string, unknown>;
 
-const SYSTEM_FIELDS: FieldInfo[] = [
+const MAIN_SYSTEM_FIELDS: FieldInfo[] = [
   { key: 'ObjectId', displayName: '数据 Id', controlType: '系统字段', valueType: 'String', databaseDescription: '主表记录唯一标识' },
-  { key: 'CreatedBy', displayName: '创建人', controlType: '系统字段', valueType: 'String', databaseDescription: '关联 H_User.ObjectId' },
-  { key: 'CreatedTime', displayName: '创建时间', controlType: '系统字段', valueType: 'DateTime', databaseDescription: '记录创建时间' },
-  { key: 'ModifiedTime', displayName: '修改时间', controlType: '系统字段', valueType: 'DateTime', databaseDescription: '记录最后修改时间' },
-  { key: 'OwnerId', displayName: '拥有者', controlType: '系统字段', valueType: 'String', databaseDescription: '关联 H_User.ObjectId' },
-  { key: 'OwnerDeptId', displayName: '所属部门', controlType: '系统字段', valueType: 'String', databaseDescription: '关联 H_OrganizationUnit.ObjectId' }
+  { key: 'Status', displayName: '数据状态', controlType: '系统字段', valueType: 'Int', databaseDescription: '取值：0 草稿，1 生效/流程结束，2 流程进行中，3 作废' },
+  { key: 'CreatedBy', displayName: '创建人', controlType: '系统字段', valueType: 'String', databaseDescription: '关联 H_User.ObjectId', mutableName: true },
+  { key: 'CreatedTime', displayName: '创建时间', controlType: '系统字段', valueType: 'DateTime', databaseDescription: '记录创建时间', mutableName: true },
+  { key: 'ModifiedTime', displayName: '修改时间', controlType: '系统字段', valueType: 'DateTime', databaseDescription: '记录最后修改时间', mutableName: true },
+  { key: 'OwnerId', displayName: '拥有者', controlType: '系统字段', valueType: 'String', databaseDescription: '关联 H_User.ObjectId', mutableName: true },
+  { key: 'OwnerDeptId', displayName: '所属部门', controlType: '系统字段', valueType: 'String', databaseDescription: '关联 H_OrganizationUnit.ObjectId', mutableName: true }
+];
+
+const CHILD_SYSTEM_FIELDS: FieldInfo[] = [
+  { key: 'ObjectId', displayName: '数据 Id', controlType: '系统字段', valueType: 'String', databaseDescription: '子表记录唯一标识' },
+  { key: 'ParentObjectId', displayName: '主表数据 Id', controlType: '系统字段', valueType: 'String', databaseDescription: '关联主表 ObjectId' }
 ];
 
 const CONTROL_METADATA: Record<string, { controlType: string; valueType: string }> = {
@@ -97,6 +105,37 @@ function getCompactDisplayName(displayName: string, key: string): string {
     .replace(new RegExp(`（${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}）$`), '')
     .replace(new RegExp(`\\(${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)$`), '')
     .replace(/^子表内-/, '');
+}
+
+function findSystemField(fieldKey: string, systemFields: FieldInfo[]): FieldInfo | undefined {
+  return systemFields.find((field) => field.key === fieldKey);
+}
+
+/**
+ * 合并系统字段与设计内容中实际收集到的字段。
+ * 系统字段排在最前,当用户拖入系统控件并改了名称时,以实际控件名称为准;
+ * 无对应控件的系统字段(ObjectId、Status、ParentObjectId)始终用默认值。
+ * 类型、备注列始终使用系统字段默认值,其余字段保持原顺序。
+ */
+function mergeSystemFields(fields: FieldInfo[], systemFields: FieldInfo[]): FieldInfo[] {
+  const actualByKey = new Map<string, FieldInfo>();
+  fields.forEach((field) => actualByKey.set(field.key, field));
+
+  const merged: FieldInfo[] = [];
+  const seen = new Set<string>();
+  systemFields.forEach((systemField) => {
+    const actualField = systemField.mutableName ? actualByKey.get(systemField.key) : undefined;
+    merged.push(actualField || systemField);
+    seen.add(systemField.key);
+  });
+  fields.forEach((field) => {
+    if (!seen.has(field.key)) {
+      seen.add(field.key);
+      merged.push(field);
+    }
+  });
+
+  return merged;
 }
 
 function getDatabaseDescription(
@@ -186,7 +225,6 @@ function createField(record: UnknownRecord, schemaCode: string, childTableCode?:
   if (
     !key ||
     !displayName ||
-    !controlKey ||
     controlKey === 'FormGridView' ||
     controlKey === 'FormLayout' ||
     controlKey === 'FormGroupTitle' ||
@@ -199,6 +237,26 @@ function createField(record: UnknownRecord, schemaCode: string, childTableCode?:
   const fieldKey = childTableCode && key.startsWith(`${childTableCode}.`)
     ? key.substring(childTableCode.length + 1)
     : key;
+
+  // 系统字段以 key 识别。类型、备注使用系统字段默认值;
+  // 只有可拖入设计器并允许改名的系统控件才用设计内容里的名称,其余保持默认名称。
+  const systemField = findSystemField(fieldKey, childTableCode ? CHILD_SYSTEM_FIELDS : MAIN_SYSTEM_FIELDS);
+  if (systemField) {
+    return {
+      key: fieldKey,
+      displayName: systemField.mutableName
+        ? getCompactDisplayName(displayName, fieldKey)
+        : systemField.displayName,
+      controlType: systemField.controlType,
+      valueType: systemField.valueType,
+      databaseDescription: systemField.databaseDescription
+    };
+  }
+
+  if (!controlKey) {
+    return undefined;
+  }
+
   const metadata = CONTROL_METADATA[controlKey] || {
     controlType: controlKey,
     valueType: '未识别，请以氚云控件配置为准'
@@ -237,10 +295,7 @@ function collectControls(
     const childTable: ChildTableInfo = {
       key: getString(record, 'Key'),
       displayName: getCompactDisplayName(getString(options, 'DisplayName'), getString(record, 'Key')),
-      fields: [
-        { key: 'ObjectId', displayName: '数据 Id', controlType: '系统字段', valueType: 'String', databaseDescription: '子表记录唯一标识' },
-        { key: 'ParentObjectId', displayName: '主表数据 Id', controlType: '系统字段', valueType: 'String', databaseDescription: '关联主表 ObjectId' }
-      ]
+      fields: []
     };
     if (childTable.key && childTable.displayName) {
       childTables.push(childTable);
@@ -314,18 +369,11 @@ export function hasFormSchema(jsonData: SheetDesignerLoadFormResponse): boolean 
  */
 export function parseSchemaJSON(jsonData: SheetDesignerLoadFormResponse, formCode?: string): string {
   const { schemaName, schemaCode, controlsData } = extractSchemaInfo(jsonData, formCode);
-  const mainFields = [...SYSTEM_FIELDS];
+  const mainFields: FieldInfo[] = [];
   const childTables: ChildTableInfo[] = [];
   collectControls(controlsData, mainFields, childTables, schemaCode);
 
-  const existingFieldKeys = new Set<string>();
-  const uniqueMainFields = mainFields.filter((field) => {
-    if (existingFieldKeys.has(field.key)) {
-      return false;
-    }
-    existingFieldKeys.add(field.key);
-    return true;
-  });
+  const uniqueMainFields = mergeSystemFields(mainFields, MAIN_SYSTEM_FIELDS);
 
   let output = `# ${schemaName}\n\n`;
   output += `表单编码：${schemaCode}\n`;
@@ -337,7 +385,7 @@ export function parseSchemaJSON(jsonData: SheetDesignerLoadFormResponse, formCod
     output += `\n## ${childTable.displayName}\n\n`;
     output += `子表编码：${childTable.key}\n`;
     output += `数据库表名：i_${childTable.key}\n\n`;
-    output += formatFieldTable(childTable.fields);
+    output += formatFieldTable(mergeSystemFields(childTable.fields, CHILD_SYSTEM_FIELDS));
   });
 
   return output;
