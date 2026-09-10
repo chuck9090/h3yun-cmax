@@ -90,7 +90,7 @@ export function setToken(token: string, engineCode: string): void {
 /**
  * 获取请求头(包含认证信息)
  */
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
     'Content-Type': 'application/json;charset=UTF-8'
@@ -115,11 +115,11 @@ function getAuthHeaders(): Record<string, string> {
  * @param endpoint API 端点路径
  * @returns 完整的 URL
  */
-function buildUrl(endpoint: string): string {
+export function buildUrl(endpoint: string): string {
   return `${API_BASE_URL}${endpoint}`;
 }
 
-function ensureSuccessfulStatus(statusCode: number, action: string): void {
+export function ensureSuccessfulStatus(statusCode: number, action: string): void {
   if (statusCode >= 200 && statusCode < 300) {
     return;
   }
@@ -143,6 +143,15 @@ export class H3YunLegacyApiService {
     customCodeCache.clear();
     listViewCodeCache.clear();
     loadFormFailures.length = 0;
+  }
+
+  /**
+   * 清空所有缓存
+   */
+  clearCaches(): void {
+    loadFormCache.clear();
+    customCodeCache.clear();
+    listViewCodeCache.clear();
   }
 
   /**
@@ -363,7 +372,7 @@ export class H3YunLegacyApiService {
     }
   }
 
-  private async loadListViewCode(formCode: string): Promise<ListViewCode> {
+  protected async loadListViewCode(formCode: string): Promise<ListViewCode> {
     const cachedCode = listViewCodeCache.get(formCode);
 
     if (cachedCode) {

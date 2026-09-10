@@ -6,7 +6,17 @@ class H3YunApiFacade {
   private apiVersion: H3YunApiVersion = 'legacy';
 
   setApiVersion(apiVersion: H3YunApiVersion | undefined): void {
-    this.apiVersion = apiVersion === 'new' ? 'new' : 'legacy';
+    const shouldUseNew = apiVersion === 'new';
+    if (this.apiVersion !== (shouldUseNew ? 'new' : 'legacy')) {
+      // 切换版本时清空缓存,确保重新从氚云获取数据
+      this.clearCaches();
+    }
+    this.apiVersion = shouldUseNew ? 'new' : 'legacy';
+  }
+
+  private clearCaches(): void {
+    h3yunLegacyApi.clearCaches();
+    h3yunNewApi.clearCaches();
   }
 
   setToken(token: string, engineCode: string): void {
