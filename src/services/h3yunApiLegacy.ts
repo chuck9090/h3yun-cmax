@@ -190,7 +190,10 @@ export class H3YunLegacyApiService {
         try {
           loadFormResponse = await this.loadFormDesign(node.code);
         } catch (error) {
-          if (!isReportNode(node) && (!knownFormCodes || knownFormCodes.has(node.code))) {
+          // 已知表单(编码已记录在 cmax.json)的 LoadForm 失败必须记入失败并中断同步,
+          // 氚云不存在表单转报表逻辑,失败说明本次没有同步到,不能当作已删除。
+          const isKnownForm = knownFormCodes?.has(node.code) ?? false;
+          if (isKnownForm || (!knownFormCodes && !isReportNode(node))) {
             loadFormFailures.push({
               code: node.code,
               name: node.displayName,
@@ -201,7 +204,15 @@ export class H3YunLegacyApiService {
         }
 
         if (!hasFormSchema(loadFormResponse)) {
-          // LoadForm 成功但没有表单结构时,说明该节点是报表等非表单节点,直接跳过。
+          // 已知表单必须返回表单结构;没有结构说明本次没同步到,记入失败以中断同步。
+          // 未同步过的节点可能是报表等非表单节点,直接跳过。
+          if (knownFormCodes?.has(node.code)) {
+            loadFormFailures.push({
+              code: node.code,
+              name: node.displayName,
+              error: 'LoadForm 未返回表单结构'
+            });
+          }
           return null;
         }
 

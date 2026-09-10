@@ -125,7 +125,11 @@ export async function handleBuildProject(): Promise<void> {
 
         // Step 3: 获取表单列表
         progress.report({ message: '正在获取表单列表...', increment: 10 });
-        const forms = await h3yunApi.getForms(appCode);
+        const existingConfig = fileService.readWorkspaceConfig(codeFolderPath).apps[appSuffix];
+        const knownFormCodes = new Set(
+          Object.values(existingConfig?.forms || {}).map((form) => form.formCode)
+        );
+        const forms = await h3yunApi.getForms(appCode, knownFormCodes);
         const loadFormFailures = h3yunApi.consumeLoadFormFailures();
         if (loadFormFailures.length > 0) {
           const failureNames = loadFormFailures.map((failure) => failure.name).join('、');
@@ -133,7 +137,6 @@ export async function handleBuildProject(): Promise<void> {
           throw new Error(`无法确认以下表单的最新结构: ${failureNames},已取消本次构建`);
         }
 
-        const existingConfig = fileService.readWorkspaceConfig(codeFolderPath).apps[appSuffix];
         if (existingConfig) {
           if (existingConfig.appName !== application.appName) {
             fileService.saveFailedNodesReport(codeFolderPath, existingConfig.appName, []);
