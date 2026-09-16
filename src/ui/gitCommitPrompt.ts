@@ -2,7 +2,12 @@ import * as vscode from 'vscode';
 
 export const DEFAULT_COMMIT_MESSAGE = '从氚云同步';
 
-export async function promptForCommitMessage(summary?: string): Promise<string | undefined> {
+export function buildDefaultCommitMessage(appName?: string): string {
+  const name = appName?.trim();
+  return name ? `从氚云同步【${name}】` : DEFAULT_COMMIT_MESSAGE;
+}
+
+export async function promptForCommitMessage(summary?: string, appName?: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     const panel = vscode.window.createWebviewPanel(
       'h3yunCommitMessage',
@@ -14,7 +19,7 @@ export async function promptForCommitMessage(summary?: string): Promise<string |
       }
     );
 
-    panel.webview.html = getWebviewContent(DEFAULT_COMMIT_MESSAGE, summary);
+    panel.webview.html = getWebviewContent(buildDefaultCommitMessage(appName), summary);
 
     panel.webview.onDidReceiveMessage((message) => {
       switch (message.command) {

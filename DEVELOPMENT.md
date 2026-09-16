@@ -145,26 +145,27 @@ const GITIGNORE_ENTRIES = [
 
 ```json
 {
-  "h3yunApiVersion": "legacy"
+  "h3yunApiVersion": "new"
 }
 ```
 
 取值说明:
 
-- `legacy`：老版本接口,也是默认值。
-- `new`：新版本接口。
+- `new`：新版本接口,也是默认值。
+- `legacy`：老版本接口。
 
 使用规则:
 
-- 新建工作区时默认写入 `"h3yunApiVersion": "legacy"`。
+- 新建工作区时默认写入 `"h3yunApiVersion": "new"`。
 - 已有根级配置时,新增应用和同步均保留当前配置值,不会覆盖用户手动改成的 `new`。
+- 旧版 `cmax.json` 若缺少 `h3yunApiVersion` 字段,按默认值 `new` 处理,并在下次写回时补全。
 - 旧项目需要使用新版工具重新构建项目结构,不会读取旧应用目录中的配置。
 
 相关文件:
 
 - `src/types/index.ts`：定义 `H3YunApiVersion` 和 `CmaxWorkspaceConfig.h3yunApiVersion`。
 - `src/services/fileService.ts`：创建、读取和写回 `cmax.json` 时处理接口版本默认值和保留逻辑。
-- `src/commands/buildProject.ts`：新建工作区时默认使用 `legacy`,已有工作区时复用根级配置。
+- `src/commands/buildProject.ts`：新建工作区时默认使用 `new`,已有工作区时复用根级配置。
 - `src/commands/syncProject.ts`：同步时按根级 `cmax.json` 中的 `h3yunApiVersion` 设置接口版本。
 - `src/ui/buildProjectForm.ts`：构建或重新输入 Token 时,使用当前流程指定的接口版本进行验证。
 
@@ -174,7 +175,7 @@ const GITIGNORE_ENTRIES = [
 
 主要职责:
 
-- 维护当前接口版本,缺省为 `legacy`。
+- 维护当前接口版本,缺省为 `new`。
 - 对外保持原有 `h3yunApi` 单例入口,避免命令层大面积修改 import。
 - 调用 `setApiVersion()` 后,后续应用、表单、代码等请求会分发到对应版本实现。
 - 调用 `setToken()` 时同时同步到新旧两个实现,保证切换版本后认证信息可用。

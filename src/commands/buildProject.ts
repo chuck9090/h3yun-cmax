@@ -58,7 +58,8 @@ export async function handleBuildProject(): Promise<void> {
   const inputData = await showBuildProjectForm({
     engineCode: presetEngineCode,
     engineCodeReadonly: !!presetEngineCode,
-    h3Token: presetToken
+    h3Token: presetToken,
+    apiVersion: fileService.readWorkspaceConfig(codeFolderPath).h3yunApiVersion
   });
   
   if (!inputData) {

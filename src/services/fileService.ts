@@ -28,7 +28,7 @@ const GITIGNORE_ENTRIES = [
   '.codegraph/'
 ];
 
-const DEFAULT_H3YUN_API_VERSION: H3YunApiVersion = 'legacy';
+const DEFAULT_H3YUN_API_VERSION: H3YunApiVersion = 'new';
 
 /**
  * 文件管理服务类
@@ -378,7 +378,7 @@ export class FileService {
   readWorkspaceConfig(codeFolderPath: string): CmaxWorkspaceConfig {
     const configPath = path.join(codeFolderPath, CMAX_CONFIG_FILENAME);
     if (!fs.existsSync(configPath)) {
-      return { version: 2, apps: {} };
+      return { version: 2, h3yunApiVersion: DEFAULT_H3YUN_API_VERSION, apps: {} };
     }
 
     const config = this.readJsonFile<Partial<CmaxWorkspaceConfig>>(configPath);
@@ -392,7 +392,7 @@ export class FileService {
     return {
       version: 2,
       engineCode: config.engineCode,
-      h3yunApiVersion: config.h3yunApiVersion === 'new' ? 'new' : DEFAULT_H3YUN_API_VERSION,
+      h3yunApiVersion: config.h3yunApiVersion === 'legacy' ? 'legacy' : DEFAULT_H3YUN_API_VERSION,
       systemUserId: config.systemUserId,
       apps
     };

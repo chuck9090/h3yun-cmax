@@ -320,7 +320,7 @@
 {
   "version": 2,
   "engineCode": "企业引擎编码",
-  "h3yunApiVersion": "legacy",
+  "h3yunApiVersion": "new",
   "systemUserId": "System用户的ObjectId",
   "apps": {
     "a1a2b3c": {
@@ -363,15 +363,16 @@
 
 可选值:
 
-- `legacy`: 使用老版本接口。新建项目默认使用此值。
-- `new`: 使用新版本接口。
+- `new`: 使用新版本接口。新建项目默认使用此值。
+- `legacy`: 使用老版本接口。
 
 使用规则:
 
-- 新建工作区时默认使用 `legacy`,不会在构建表单中让用户选择。
+- 新建工作区时默认使用 `new`,不会在构建表单中让用户选择。
 - 已有根级配置时,新增应用和同步均保留根级 `h3yunApiVersion` 的当前值。
-- 如果发现构建或同步时接口不匹配,请先把 `cmax.json` 中的 `h3yunApiVersion` 改成 `new`,再执行“从氚云同步”。
-- 同步时插件会保留该配置,不会自动改回 `legacy`。
+- 旧版 `cmax.json` 若缺少 `h3yunApiVersion` 字段,将按默认值 `new` 处理,并在下次写回时补全为 `"new"`。
+- 如果发现构建或同步时接口不匹配,可把 `cmax.json` 中的 `h3yunApiVersion` 改成 `legacy`,再执行“从氚云同步”。
+- 同步时插件会保留该配置,不会自动改回 `new`。
 
 **安全提示**: 
 - Token 会以明文形式保存在 `.h3token` 中

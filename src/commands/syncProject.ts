@@ -79,8 +79,8 @@ async function ensureEngineCode(workspaceConfig: CmaxWorkspaceConfig, codeFolder
   return engineCode;
 }
 
-async function promptAndCommit(codeFolderPath: string, appFolderPath: string, summary: string): Promise<void> {
-  const commitMessage = await promptForCommitMessage(summary);
+async function promptAndCommit(codeFolderPath: string, appFolderPath: string, summary: string, appName: string): Promise<void> {
+  const commitMessage = await promptForCommitMessage(summary, appName);
   if (!commitMessage) {
     return;
   }
@@ -610,6 +610,6 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
   );
 
   if (syncSummary && await gitService.hasApplicationChanges(codeFolderPath, appFolderPath)) {
-    await promptAndCommit(codeFolderPath, appFolderPath, syncSummary);
+    await promptAndCommit(codeFolderPath, appFolderPath, syncSummary, config.appName);
   }
 }

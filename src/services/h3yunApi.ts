@@ -3,7 +3,7 @@ import { h3yunLegacyApi, H3YunLegacyApiService } from './h3yunApiLegacy';
 import { h3yunNewApi } from './h3yunApiNew';
 
 class H3YunApiFacade {
-  private apiVersion: H3YunApiVersion = 'legacy';
+  private apiVersion: H3YunApiVersion = 'new';
 
   setApiVersion(apiVersion: H3YunApiVersion | undefined): void {
     const shouldUseNew = apiVersion === 'new';

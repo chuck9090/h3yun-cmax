@@ -45,7 +45,7 @@ export interface CmaxConfig {
 export interface CmaxWorkspaceConfig {
   version: 2;
   engineCode?: string;                  // 企业引擎编码
-  h3yunApiVersion?: H3YunApiVersion;    // 氚云接口版本,缺省使用老版本
+  h3yunApiVersion?: H3YunApiVersion;    // 氚云接口版本,缺省使用新版本
   systemUserId?: string;                // System 用户的 ObjectId,用于 MCP 执行 SQL 查询
   apps: Record<string, CmaxConfig>;
 }
