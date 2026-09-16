@@ -14,6 +14,8 @@ import {
   SheetDesignerLoadFormResponse
 } from '../parsers/sheetDesignerParser';
 import { H3FunctionNode } from '../parsers/functionNodeTypes';
+import { mapWithConcurrency } from '../utils/promiseUtils';
+import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
 import {
   FormCustomCode,
   LoadCustomCodeResponse,
@@ -184,7 +186,10 @@ export class H3YunLegacyApiService {
   async getForms(appCode: string, knownFormCodes?: Set<string>): Promise<H3Form[]> {
     try {
       const nodes = await this.getFunctionNodes(appCode);
-      const formEntries: Array<H3Form | null> = await Promise.all(nodes.map(async (node) => {
+      const formEntries: Array<H3Form | null> = await mapWithConcurrency(
+        nodes,
+        FORM_REQUEST_CONCURRENCY,
+        async (node) => {
         let loadFormResponse: SheetDesignerLoadFormResponse;
 
         try {
@@ -221,7 +226,8 @@ export class H3YunLegacyApiService {
           formName: node.displayName,
           description: node.summary || undefined
         };
-      }));
+        }
+      );
 
       return formEntries.filter((entry): entry is H3Form => entry !== null);
     } catch (error) {

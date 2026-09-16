@@ -6,6 +6,8 @@ import { gitService } from '../services/gitService';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { CmaxFormEntry } from '../types';
 import { buildFolderName, CODE_FOLDER_NAME, createFolder, getCodeFolderPath } from '../utils/folderUtils';
+import { mapWithConcurrency } from '../utils/promiseUtils';
+import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
 
 /**
  * 构建项目命令处理器
@@ -187,8 +189,7 @@ export async function handleBuildProject(): Promise<void> {
         );
         const totalForms = forms.length;
 
-        for (let i = 0; i < totalForms; i++) {
-          const form = forms[i];
+        await mapWithConcurrency(forms, FORM_REQUEST_CONCURRENCY, async (form, i) => {
 
           progress.report({
             message: `正在处理表单 ${i + 1}/${totalForms}: ${form.formName}...`,
@@ -218,7 +219,7 @@ export async function handleBuildProject(): Promise<void> {
             }
             vscode.window.showWarningMessage(`表单 "${form.formName}" 处理失败: ${error instanceof Error ? error.message : String(error)}`);
           }
-        }
+        });
 
         // Step 6: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 90 });

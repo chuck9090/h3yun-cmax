@@ -5,6 +5,8 @@ import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
 import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap } from '../types';
 import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
+import { mapWithConcurrency } from '../utils/promiseUtils';
+import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
@@ -413,14 +415,14 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         
         // 首先获取所有表单的代码以便检测冲突
         const formCodesMap = new Map<string, FileContentMap>();
-        for (const form of forms) {
+        await mapWithConcurrency(forms, FORM_REQUEST_CONCURRENCY, async (form) => {
           try {
             const codes = await h3yunApi.getFormAllCodes(form.formCode);
             formCodesMap.set(form.formCode, codes);
           } catch (error) {
             console.error(`获取表单 "${form.formName}" 代码失败:`, error);
           }
-        }
+        });
 
         // 检测冲突数量
         let conflictCount = 0;

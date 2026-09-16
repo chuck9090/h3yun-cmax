@@ -1,0 +1,1 @@
+export const FORM_REQUEST_CONCURRENCY = 10;
