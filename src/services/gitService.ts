@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs';
 import * as path from 'path';
 
 const execFileAsync = promisify(execFile);
@@ -32,8 +33,8 @@ export class GitService {
   ): Promise<void> {
     const target = this.getRelativePath(repositoryPath, targetFolderPath);
     const allowedPaths = target === '.'
-      ? new Set(['.gitignore', 'cmax.json'])
-      : new Set([target, '.gitignore', 'cmax.json']);
+      ? new Set(['.gitignore', 'cmax.json', 'README.md'])
+      : new Set([target, '.gitignore', 'cmax.json', 'README.md']);
     const { stdout } = await execFileAsync(
       'git',
       ['diff', '--cached', '--name-only'],
@@ -88,7 +89,13 @@ export class GitService {
     }
     await this.ensureNoUnrelatedStagedChanges(repositoryPath, targetFolderPath);
     const target = this.getRelativePath(repositoryPath, targetFolderPath);
-    const addPaths = target === '.' ? ['.gitignore', '.'] : ['.gitignore', 'cmax.json', target];
+    const candidatePaths = target === '.'
+      ? ['.gitignore', '.']
+      : ['.gitignore', 'cmax.json', 'README.md', target];
+    // README.md 等文件由插件生成,写入失败时不应阻塞 Git 提交。
+    const addPaths = candidatePaths.filter((item) => (
+      item === '.' || fs.existsSync(path.join(repositoryPath, item))
+    ));
     await this.runGit(['add', '--', ...addPaths], repositoryPath);
     await this.runGit(['commit', '-m', commitMessage], repositoryPath);
   }

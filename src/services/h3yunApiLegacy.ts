@@ -179,53 +179,55 @@ export class H3YunLegacyApiService {
   }
 
   /**
-   * 获取应用下的所有表单
+   * 获取应用下的所有表单,按氚云应用菜单顺序返回。
+   * 应用菜单中的分组节点不会作为表单返回,其名称记录在表单的 groupPath 中。
    * @param appCode 应用编码
    * @returns 表单列表
    */
   async getForms(appCode: string, knownFormCodes?: Set<string>): Promise<H3Form[]> {
     try {
       const nodes = await this.getFunctionNodes(appCode);
-      const formEntries: Array<H3Form | null> = await mapWithConcurrency(
-        nodes,
+      const formEntries = await mapWithConcurrency(
+        this.resolveFormNodes(appCode, nodes),
         FORM_REQUEST_CONCURRENCY,
-        async (node) => {
-        let loadFormResponse: SheetDesignerLoadFormResponse;
+        async ({ node, groupPath }) => {
+          let loadFormResponse: SheetDesignerLoadFormResponse;
 
-        try {
-          loadFormResponse = await this.loadFormDesign(node.code);
-        } catch (error) {
-          // 已知表单(编码已记录在 cmax.json)的 LoadForm 失败必须记入失败并中断同步,
-          // 氚云不存在表单转报表逻辑,失败说明本次没有同步到,不能当作已删除。
-          const isKnownForm = knownFormCodes?.has(node.code) ?? false;
-          if (isKnownForm || (!knownFormCodes && !isReportNode(node))) {
-            loadFormFailures.push({
-              code: node.code,
-              name: node.displayName,
-              error: error instanceof Error ? error.message : String(error)
-            });
+          try {
+            loadFormResponse = await this.loadFormDesign(node.code);
+          } catch (error) {
+            // 已知表单(编码已记录在 cmax.json)的 LoadForm 失败必须记入失败并中断同步,
+            // 氚云不存在表单转报表逻辑,失败说明本次没有同步到,不能当作已删除。
+            const isKnownForm = knownFormCodes?.has(node.code) ?? false;
+            if (isKnownForm || (!knownFormCodes && !isReportNode(node))) {
+              loadFormFailures.push({
+                code: node.code,
+                name: node.displayName,
+                error: error instanceof Error ? error.message : String(error)
+              });
+            }
+            return null;
           }
-          return null;
-        }
 
-        if (!hasFormSchema(loadFormResponse)) {
-          // 已知表单必须返回表单结构;没有结构说明本次没同步到,记入失败以中断同步。
-          // 未同步过的节点可能是报表等非表单节点,直接跳过。
-          if (knownFormCodes?.has(node.code)) {
-            loadFormFailures.push({
-              code: node.code,
-              name: node.displayName,
-              error: 'LoadForm 未返回表单结构'
-            });
+          if (!hasFormSchema(loadFormResponse)) {
+            // 已知表单必须返回表单结构;没有结构说明本次没同步到,记入失败以中断同步。
+            // 未同步过的节点可能是报表等非表单节点,直接跳过。
+            if (knownFormCodes?.has(node.code)) {
+              loadFormFailures.push({
+                code: node.code,
+                name: node.displayName,
+                error: 'LoadForm 未返回表单结构'
+              });
+            }
+            return null;
           }
-          return null;
-        }
 
-        return {
-          formCode: node.code,
-          formName: node.displayName,
-          description: node.summary || undefined
-        };
+          return {
+            formCode: node.code,
+            formName: node.displayName,
+            description: node.summary || undefined,
+            ...(groupPath.length > 0 ? { groupPath: [...groupPath] } : {})
+          } as H3Form;
         }
       );
 
@@ -235,11 +237,77 @@ export class H3YunLegacyApiService {
     }
   }
 
-  private async getFunctionNodes(appCode: string): Promise<H3FunctionNode[]> {
+  /**
+   * 从应用节点列表中区分分组节点和表单节点,并解析表单的分组路径。
+   * 氚云应用菜单只有一个层级的分组,分组编码会作为其下表单的 parentCode 出现,
+   * 因此“被其他节点作为 parentCode 引用”的节点即分组节点,不依赖 NodeType。
+   * 先按 parentCode 还原菜单树,再按接口返回的节点顺序深度优先展开,
+   * 保证同一分组的表单连续输出,且整体顺序与氚云应用菜单一致。
+   * @param appCode 应用编码
+   * @param nodes 应用下的节点列表
+   */
+  private resolveFormNodes(
+    appCode: string,
+    nodes: H3FunctionNode[]
+  ): Array<{ node: H3FunctionNode; groupPath: string[] }> {
+    const nodeByCode = new Map(
+      nodes.filter((node) => !!node.code).map((node) => [node.code, node])
+    );
+
+    // 按 parentCode 归并子节点,子节点列表保持接口返回顺序。
+    const childNodesByParent = new Map<string, H3FunctionNode[]>();
+    for (const node of nodes) {
+      if (!node.code) continue;
+      const parentCode = node.parentCode || appCode;
+      const siblings = childNodesByParent.get(parentCode);
+      if (siblings) {
+        siblings.push(node);
+      } else {
+        childNodesByParent.set(parentCode, [node]);
+      }
+    }
+
+    // 被其他节点作为 parentCode 引用、且自身也在节点列表中的节点即分组节点。
+    const groupCodes = new Set<string>();
+    for (const parentCode of childNodesByParent.keys()) {
+      if (parentCode !== appCode && nodeByCode.has(parentCode)) {
+        groupCodes.add(parentCode);
+      }
+    }
+
+    const formNodes: Array<{ node: H3FunctionNode; groupPath: string[] }> = [];
+    const emittedCodes = new Set<string>();
+
+    const visit = (parentCode: string, groupPath: string[]): void => {
+      for (const node of childNodesByParent.get(parentCode) || []) {
+        if (emittedCodes.has(node.code)) continue;
+        emittedCodes.add(node.code);
+
+        if (groupCodes.has(node.code)) {
+          visit(node.code, [...groupPath, node.displayName]);
+        } else {
+          formNodes.push({ node, groupPath });
+        }
+      }
+    };
+
+    visit(appCode, []);
+
+    // 兜底:分组编码不在节点列表内导致未挂上树的节点,按返回顺序补到顶层。
+    for (const node of nodes) {
+      if (!node.code || emittedCodes.has(node.code) || groupCodes.has(node.code)) continue;
+      emittedCodes.add(node.code);
+      formNodes.push({ node, groupPath: [] });
+    }
+
+    return formNodes;
+  }
+
+  private async getFunctionNodes(parentCode: string): Promise<H3FunctionNode[]> {
     const url = buildUrl('/v1/functionnode/children');
     const headers = getAuthHeaders();
     const body = JSON.stringify({
-      parentCode: appCode,
+      parentCode,
       checkHasChild: false
     });
 

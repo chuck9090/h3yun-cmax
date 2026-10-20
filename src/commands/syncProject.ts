@@ -3,6 +3,7 @@ import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
+import { saveProjectReadme } from '../services/projectReadme';
 import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap } from '../types';
 import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
 import { mapWithConcurrency } from '../utils/promiseUtils';
@@ -384,6 +385,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           );
           fileService.updateLastSyncTime(codeFolderPath, appSuffix);
           fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
+          saveProjectReadme(codeFolderPath);
           syncSummary = '同步完成! 该应用下没有表单';
           return;
         }
@@ -535,7 +537,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
             updatedFormsRecord[formSuffix] = {
               formCode: form.formCode,
-              formName: form.formName
+              formName: form.formName,
+              ...(form.groupPath?.length ? { groupPath: form.groupPath } : {})
             };
 
             successCount++;
@@ -588,6 +591,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         );
         fileService.updateLastSyncTime(codeFolderPath, appSuffix);
          fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
+        saveProjectReadme(codeFolderPath);
 
         progress.report({ message: '完成!', increment: 100 });
 

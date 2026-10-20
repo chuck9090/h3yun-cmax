@@ -3,6 +3,7 @@ import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
+import { saveProjectReadme } from '../services/projectReadme';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
 import { CmaxFormEntry } from '../types';
 import { buildFolderName, CODE_FOLDER_NAME, createFolder, getCodeFolderPath } from '../utils/folderUtils';
@@ -172,6 +173,7 @@ export async function handleBuildProject(): Promise<void> {
           fileService.saveToken(codeFolderPath, h3Token);
           fileService.ensureGitIgnore(codeFolderPath);
            fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
+          saveProjectReadme(codeFolderPath);
           buildSummary = '项目构建成功! 该应用下没有表单';
           return;
         }
@@ -209,7 +211,8 @@ export async function handleBuildProject(): Promise<void> {
 
             formsRecord[formSuffix] = {
               formCode: form.formCode,
-              formName: form.formName
+              formName: form.formName,
+              ...(form.groupPath?.length ? { groupPath: form.groupPath } : {})
             };
           } catch (error) {
             console.error(`处理表单 "${form.formName}" 失败:`, error);
@@ -222,19 +225,37 @@ export async function handleBuildProject(): Promise<void> {
           }
         });
 
+        // 按氚云应用菜单顺序重排表单记录,避免并发写入导致 cmax.json 与 README 中的顺序随机。
+        const suffixByFormCode = new Map(
+          Object.entries(formsRecord).map(([suffix, entry]) => [entry.formCode, suffix])
+        );
+        const orderedFormsRecord: Record<string, CmaxFormEntry> = {};
+        for (const form of forms) {
+          const suffix = suffixByFormCode.get(form.formCode);
+          if (suffix) {
+            orderedFormsRecord[suffix] = formsRecord[suffix];
+          }
+        }
+        for (const [suffix, entry] of Object.entries(formsRecord)) {
+          if (!orderedFormsRecord[suffix]) {
+            orderedFormsRecord[suffix] = entry;
+          }
+        }
+
         // Step 6: 创建 cmax.json 配置文件
         progress.report({ message: '正在生成配置文件...', increment: 90 });
         fileService.createCmaxConfig(
-          codeFolderPath, appSuffix, appCode, engineCode, application.appName, formsRecord,
+          codeFolderPath, appSuffix, appCode, engineCode, application.appName, orderedFormsRecord,
           workspaceConfig.h3yunApiVersion, systemUserId || undefined
         );
         fileService.saveToken(codeFolderPath, h3Token);
         fileService.ensureGitIgnore(codeFolderPath);
          fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
+        saveProjectReadme(codeFolderPath);
 
         progress.report({ message: '完成!', increment: 100 });
 
-        buildSummary = `项目构建成功! 共处理 ${Object.keys(formsRecord).length}/${totalForms} 个表单`;
+        buildSummary = `项目构建成功! 共处理 ${Object.keys(orderedFormsRecord).length}/${totalForms} 个表单`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`构建项目失败: ${errorMessage}`);

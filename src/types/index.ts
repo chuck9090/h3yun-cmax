@@ -13,9 +13,10 @@ export interface H3Application {
  * 氚云表单信息
  */
 export interface H3Form {
-  formCode: string;     // 表单编码
-  formName: string;     // 表单名称
-  description?: string; // 表单描述
+  formCode: string;       // 表单编码
+  formName: string;       // 表单名称
+  description?: string;   // 表单描述
+  groupPath?: string[];   // 表单在应用中的分组路径,为空表示直接位于应用顶层
 }
 
 /**
@@ -54,8 +55,9 @@ export interface CmaxWorkspaceConfig {
  * CMax 表单配置条目
  */
 export interface CmaxFormEntry {
-  formCode: string;  // 表单编码
-  formName: string;  // 表单名称
+  formCode: string;      // 表单编码
+  formName: string;      // 表单名称
+  groupPath?: string[];  // 表单在应用中的分组路径,为空表示直接位于应用顶层
 }
 
 /**
