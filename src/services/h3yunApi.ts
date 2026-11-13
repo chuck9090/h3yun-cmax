@@ -1,4 +1,5 @@
-import { H3YunApiVersion } from '../types';
+import { H3YunApiVersion, SyncScope } from '../types';
+import { FieldLabelIndex } from './fieldLabelService';
 import { h3yunLegacyApi, H3YunLegacyApiService } from './h3yunApiLegacy';
 import { h3yunNewApi } from './h3yunApiNew';
 
@@ -62,6 +63,14 @@ class H3YunApiFacade {
 
   getFormAllCodes(formCode: string) {
     return this.service.getFormAllCodes(formCode);
+  }
+
+  getFormCodes(formCode: string, scope: SyncScope = 'all') {
+    return this.service.getFormCodes(formCode, scope);
+  }
+
+  getAutomations(appCode: string, fieldLabelMap?: FieldLabelIndex) {
+    return this.service.getAutomations(appCode, fieldLabelMap);
   }
 
   getSystemUserId() {

@@ -4,7 +4,8 @@ import { get, post, parseJsonResponse } from '../utils/httpUtils';
 import {
   H3Application,
   H3Form,
-  FileContentMap
+  FileContentMap,
+  SyncScope
 } from '../types';
 import { parseApplication, FunctionNodeAppListResponse } from '../parsers/appListParser';
 import { parseFunctionNodes, FunctionNodeChildrenResponse } from '../parsers/functionNodeChildrenParser';
@@ -21,6 +22,11 @@ import {
   LoadCustomCodeResponse,
   parseFormCustomCode
 } from '../parsers/customCodeParser';
+import {
+  AutomaticTriggersResponse,
+  parseAutomations
+} from '../parsers/automationParser';
+import { FieldLabelIndex } from './fieldLabelService';
 import {
   ListViewCode,
   ListViewDesignerLoadResponse,
@@ -523,26 +529,104 @@ export class H3YunLegacyApiService {
   }
 
   /**
+   * 按指定范围获取表单的设计与代码内容。
+   * 只请求范围内需要的接口,避免“仅同步表单设计”时额外拉取代码。
+   * 范围内各请求并行发出,与整体同步的性能一致。
+   * 返回值按 FileContentMap 的固定键顺序构造,保证冲突预览和写入顺序稳定。
+   * @param formCode 表单编码
+   * @param scope 同步范围
+   * @returns 本次范围内需要写入的文件内容映射
+   */
+  async getFormCodes(formCode: string, scope: SyncScope = 'all'): Promise<Partial<FileContentMap>> {
+    // 两个任务在 await 之前就已经发起,保证范围内请求仍然是并行的。
+    const fieldsTask = (scope === 'formDesign' || scope === 'all')
+      ? this.getFormFields(formCode)
+      : Promise.resolve(undefined);
+
+    const codeTask = (scope === 'code' || scope === 'all')
+      ? Promise.all([
+        this.getFormFrontendCode(formCode),
+        this.getFormBackendCode(formCode),
+        this.getListFrontendCode(formCode),
+        this.getListBackendCode(formCode)
+      ])
+      : Promise.resolve(undefined);
+
+    const [fields, codeContents] = await Promise.all([fieldsTask, codeTask]);
+
+    // 按固定顺序输出,范围外的键不写入,由调用方跳过。
+    const codes: Partial<FileContentMap> = {};
+
+    if (fields !== undefined) {
+      codes['fields.md'] = fields;
+    }
+
+    if (codeContents) {
+      const [formFrontend, formBackend, listFrontend, listBackend] = codeContents;
+      codes['form-frontend.js'] = useDefaultCodeIfEmpty('form-frontend.js', formFrontend, formCode);
+      codes['form-backend.cs'] = useDefaultCodeIfEmpty('form-backend.cs', formBackend, formCode);
+      codes['list-frontend.js'] = useDefaultCodeIfEmpty('list-frontend.js', listFrontend, formCode);
+      codes['list-backend.cs'] = useDefaultCodeIfEmpty('list-backend.cs', listBackend, formCode);
+    }
+
+    if (Object.keys(codes).length === 0) {
+      throw new Error(`未知的同步范围: ${scope}`);
+    }
+
+    return codes;
+  }
+
+  /**
    * 获取表单的所有代码内容
    * @param formCode 表单编码
    * @returns 所有代码内容的映射
    */
   async getFormAllCodes(formCode: string): Promise<FileContentMap> {
-    const [fields, formFrontend, formBackend, listFrontend, listBackend] = await Promise.all([
-      this.getFormFields(formCode),
-      this.getFormFrontendCode(formCode),
-      this.getFormBackendCode(formCode),
-      this.getListFrontendCode(formCode),
-      this.getListBackendCode(formCode)
-    ]);
+    const codes = await this.getFormCodes(formCode, 'all');
 
-    return {
-      'fields.md': fields,
-      'form-frontend.js': useDefaultCodeIfEmpty('form-frontend.js', formFrontend, formCode),
-      'form-backend.cs': useDefaultCodeIfEmpty('form-backend.cs', formBackend, formCode),
-      'list-frontend.js': useDefaultCodeIfEmpty('list-frontend.js', listFrontend, formCode),
-      'list-backend.cs': useDefaultCodeIfEmpty('list-backend.cs', listBackend, formCode)
+    // 只校验键是否补齐,允许内容为空字符串(远端确实可能没有代码)。
+    if (codes['fields.md'] === undefined
+      || codes['form-frontend.js'] === undefined
+      || codes['form-backend.cs'] === undefined
+      || codes['list-frontend.js'] === undefined
+      || codes['list-backend.cs'] === undefined) {
+      throw new Error(`获取表单 ${formCode} 的完整代码失败`);
+    }
+
+    return codes as FileContentMap;
+  }
+
+  /**
+   * 获取应用下全部表单的自动化配置。
+   * 接口按表单分组返回,分组内是该表单的全部自动化。
+   * @param appCode 应用编码
+   * @param fieldLabelMap 字段与表单名称索引,用于把编码翻译为可读名称
+   */
+  async getAutomations(appCode: string, fieldLabelMap?: FieldLabelIndex) {
+    const url = buildUrl('/Automatic/OnAction');
+    const headers = {
+      ...getAuthHeaders(),
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/x-www-form-urlencoded'
     };
+    const postData = JSON.stringify({
+      ActionName: 'LoadTriggersByAppCode',
+      AppCode: appCode
+    });
+    const body = `PostData=${encodeURIComponent(postData)}`;
+    const response = await post(url, body, headers);
+
+    ensureSuccessfulStatus(response.statusCode, '获取自动化配置');
+    const apiResponse = parseJsonResponse<AutomaticTriggersResponse>(response);
+    return parseAutomations(
+      apiResponse,
+      fieldLabelMap || {
+        labels: new Map(),
+        childrenOf: new Map(),
+        childNames: new Map(),
+        formNames: new Map()
+      }
+    );
   }
 
   /**

@@ -107,13 +107,15 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('│   │   ├── form-frontend.js      # 表单前端代码');
   lines.push('│   │   ├── form-backend.cs       # 表单后端代码');
   lines.push('│   │   ├── list-frontend.js      # 列表前端代码');
-  lines.push('│   │   └── list-backend.cs       # 列表后端代码');
+  lines.push('│   │   ├── list-backend.cs       # 列表后端代码');
+  lines.push('│   │   └── automation.md         # 自动化配置（执行“同步自动化”后生成）');
   lines.push('│   └── ...');
   lines.push('└── ...');
   lines.push('```');
   lines.push('');
   lines.push('- 应用目录、表单目录名称后面的 `(a1b2c3)`、`(f1a2b3)` 是由氚云编码计算出的稳定后缀，用于避免同名目录冲突；完整对应关系记录在 `cmax.json` 中。');
   lines.push('- 本地目录只保留“应用 → 表单”两层：氚云系统中的“分组”不会生成文件夹，同一应用下的所有表单目录都直接放在应用目录下。');
+  lines.push('- `automation.md` 只在执行“从氚云分项同步 → 同步自动化”后生成；一个表单的多个自动化都记录在同一个文件里，不会为每个自动化单独建文件。');
   lines.push('- 资源管理器按文件夹名称排序，与氚云系统中应用菜单的实际顺序不同。查找表单时，请以本文档“系统结构”章节或 `cmax.json` 中的记录顺序为准。');
   lines.push('');
 
@@ -181,6 +183,7 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('## 四、如何更新本目录');
   lines.push('');
   lines.push('- 更新单个应用：在资源管理器中右键点击应用目录，选择“从氚云同步”。');
+  lines.push('- 只更新部分内容：右键点击应用目录，选择“从氚云分项同步”，可分别同步“表单设计”“代码”“自动化”。');
   lines.push('- 新增应用：按 `Ctrl+Shift+P` 打开命令面板，执行“从氚云构建项目”。');
   lines.push('- Token 失效：按提示重新输入 Token，或右键点击“氚云代码”目录，选择“更新氚云 Token”。');
   lines.push('');

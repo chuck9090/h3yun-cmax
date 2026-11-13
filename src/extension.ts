@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { handleBuildProject } from './commands/buildProject';
 import { handleSyncProject } from './commands/syncProject';
+import { handleSyncAutomation } from './commands/syncAutomation';
 import { handleUpdateProjectToken } from './commands/updateProjectToken';
 import { handleQueryFormName } from './commands/queryFormName';
 import { registerH3yunFrontendApiProvider } from './providers/h3yunFrontendApiProvider';
@@ -45,6 +46,49 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  // 注册"从氚云分项同步"子菜单中的命令
+  const syncFormDesignCommand = vscode.commands.registerCommand(
+    'h3yun-cmax.syncFormDesign',
+    async (uri?: vscode.Uri) => {
+      try {
+        await handleSyncProject(uri, 'formDesign');
+      } catch (error) {
+        console.error('同步表单设计命令执行失败:', error);
+        vscode.window.showErrorMessage(
+          `同步表单设计失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+
+  const syncCodeCommand = vscode.commands.registerCommand(
+    'h3yun-cmax.syncCode',
+    async (uri?: vscode.Uri) => {
+      try {
+        await handleSyncProject(uri, 'code');
+      } catch (error) {
+        console.error('同步代码命令执行失败:', error);
+        vscode.window.showErrorMessage(
+          `同步代码失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+
+  const syncAutomationCommand = vscode.commands.registerCommand(
+    'h3yun-cmax.syncAutomation',
+    async (uri?: vscode.Uri) => {
+      try {
+        await handleSyncAutomation(uri);
+      } catch (error) {
+        console.error('同步自动化命令执行失败:', error);
+        vscode.window.showErrorMessage(
+          `同步自动化失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+
   const updateProjectTokenCommand = vscode.commands.registerCommand(
     'h3yun-cmax.updateProjectToken',
     async (uri?: vscode.Uri) => {
@@ -69,6 +113,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 将命令订阅添加到上下文
   context.subscriptions.push(buildProjectCommand);
   context.subscriptions.push(syncProjectCommand);
+  context.subscriptions.push(syncFormDesignCommand);
+  context.subscriptions.push(syncCodeCommand);
+  context.subscriptions.push(syncAutomationCommand);
   context.subscriptions.push(updateProjectTokenCommand);
   context.subscriptions.push(queryFormNameCommand);
 }

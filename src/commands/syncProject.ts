@@ -4,7 +4,13 @@ import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { gitService } from '../services/gitService';
 import { saveProjectReadme } from '../services/projectReadme';
-import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap } from '../types';
+import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap, SyncScope } from '../types';
+import { collectAllFieldLabels } from '../services/fieldLabelService';
+import {
+  AUTOMATION_FILENAME,
+  buildAutomationMarkdown,
+  buildEmptyAutomationMarkdown
+} from '../services/automationReport';
 import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
 import { mapWithConcurrency } from '../utils/promiseUtils';
 import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
@@ -218,10 +224,39 @@ async function syncAppFolderName(
 }
 
 /**
+ * 各同步范围在提示文案中的名称
+ */
+const SYNC_SCOPE_LABELS: Record<SyncScope, string> = {
+  all: '表单设计与代码',
+  formDesign: '表单设计',
+  code: '代码',
+  automation: '自动化'
+};
+
+/**
+ * 获取同步范围的中文名称
+ */
+function getScopeLabel(scope: SyncScope): string {
+  return SYNC_SCOPE_LABELS[scope];
+}
+
+/**
+ * 在应用目录下按表单后缀查找实际存在的表单目录。
+ * 同步代码时不重命名目录,目录名可能与 cmax.json 中的表单名称不一致,
+ * 因此必须按后缀定位真实目录,避免按名称拼路径时写出重复目录。
+ */
+function findFormFolderBySuffix(appFolderPath: string, suffix: string): string | undefined {
+  const suffixPattern = `(${suffix})`;
+  const folderName = listSubfolders(appFolderPath).find((name) => name.endsWith(suffixPattern));
+  return folderName ? path.join(appFolderPath, folderName) : undefined;
+}
+
+/**
  * 同步项目命令处理器
  * @param uri 选中的文件夹 URI(从右键菜单传入)
+ * @param scope 同步范围,默认同步表单设计与代码
  */
-export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
+export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'all'): Promise<void> {
   let appFolderPath: string;
   let codeFolderPath: string;
   let syncSummary: string | undefined;
@@ -312,16 +347,129 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
     vscode.window.showWarningMessage(`获取或更新应用名称失败: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  // 显示进度条
+  // 显示进度条。整体同步保持原有标题,分项同步在标题中标明范围。
+  const scopeLabel = getScopeLabel(scope);
+  // 用于“获取表单××失败”这类拼接文案,避免出现“表单表单设计”这类重复。
+  // 控制台沿用改前文案(all 下为“代码”),抛错文案保持改前的“表单代码”。
+  const contentLabel = scope === 'automation'
+    ? '自动化'
+    : (scope === 'formDesign' ? '表单设计' : '代码');
+  const fetchLabel = scope === 'formDesign' ? '表单设计' : '表单代码';
+  // 只有整体同步和“同步表单设计”按氚云最新表单列表处理应用下表单的增减:
+  // 新增表单建目录、重命名变更名称的表单、清理已删除的表单。
+  // “同步代码”“同步自动化”只处理本地已有表单目录,不新增、不重命名、不删除任何表单目录。
+  const handlesStructure = scope !== 'code' && scope !== 'automation';
+  const progressTitle = scope === 'all'
+    ? `正在同步应用: ${config.appName}`
+    : `正在同步${scopeLabel}: ${config.appName}`;
+
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: `正在同步应用: ${config.appName}`,
+      title: progressTitle,
       cancellable: false
     },
     async (progress) => {
       try {
         progress.report({ message: '正在验证 Token 并获取最新数据...', increment: 5 });
+
+        // 同步自动化只需要自动化配置本身，不需要表单列表与表单结构。
+        // 必须放在 getForms 之前：getForms 会为应用下每个表单各发一次 LoadForm 请求（并发 10），
+        // 表单多的应用会瞬间产生几十个并发请求，而写 automation.md 完全用不到这些数据。
+        // 放在这里后，同步自动化对每个应用只发 1 次请求，并发压力最小。
+        if (scope === 'automation') {
+          progress.report({ message: '正在获取自动化配置...', increment: 20 });
+
+          const labels = collectAllFieldLabels(codeFolderPath);
+          const fetchAutomations = () => h3yunApi.getAutomations(config.appCode, labels);
+
+          let result: Awaited<ReturnType<typeof h3yunApi.getAutomations>>;
+          try {
+            result = await fetchAutomations();
+          } catch (apiError) {
+            const errorMsg = apiError instanceof Error ? apiError.message : String(apiError);
+
+            // Token 失效时提示重新输入，与表单同步的处理保持一致
+            if (!/401|认证|token/i.test(errorMsg)) {
+              throw apiError;
+            }
+
+            const newToken = await promptForTokenWithProjectInfo(
+              config,
+              workspaceConfig,
+              'Token 已失效,请重新输入 h3_token 后继续同步'
+            );
+
+            if (!newToken) {
+              throw new Error('已取消同步');
+            }
+
+            h3yunApi.setToken(newToken, engineCode);
+            fileService.saveToken(codeFolderPath, newToken);
+            fileService.ensureGitIgnore(codeFolderPath);
+
+            progress.report({ message: '正在使用新 Token 重新获取自动化配置...', increment: 10 });
+            result = await fetchAutomations();
+          }
+
+          const { formAutomations } = result;
+          progress.report({ message: '正在写入 automation.md...', increment: 50 });
+
+          // 以接口返回的自动化分组为准,只写入本地已存在目录的表单。
+          const suffixByFormCode = new Map(
+            Object.entries(config.forms).map(([suffix, entry]) => [entry.formCode, suffix])
+          );
+
+          let writtenCount = 0;
+          let emptyCount = 0;
+          let skippedCount = 0;
+
+          for (const form of formAutomations) {
+            const suffix = suffixByFormCode.get(form.schemaCode);
+            const formFolderPath = suffix ? findFormFolderBySuffix(appFolderPath, suffix) : undefined;
+
+            if (!suffix || !formFolderPath) {
+              console.log(`同步自动化跳过本地不存在的表单目录: ${form.formName}(${form.schemaCode})`);
+              skippedCount++;
+              continue;
+            }
+
+            // buildAutomationMarkdown 内部已处理“没有自动化”的情况,无需再分支
+            fileService.saveFile(
+              path.join(formFolderPath, AUTOMATION_FILENAME),
+              buildAutomationMarkdown(form)
+            );
+            writtenCount++;
+            if (form.automations.length === 0) {
+              emptyCount++;
+            }
+          }
+
+          // 本地有目录但氚云侧已无自动化记录的表单,写入“没有自动化”的说明,避免残留旧内容。
+          const handledCodes = new Set(formAutomations.map((form) => form.schemaCode));
+          for (const [suffix, entry] of Object.entries(config.forms)) {
+            if (handledCodes.has(entry.formCode)) continue;
+
+            const formFolderPath = findFormFolderBySuffix(appFolderPath, suffix);
+            if (!formFolderPath) continue;
+
+            fileService.saveFile(
+              path.join(formFolderPath, AUTOMATION_FILENAME),
+              buildEmptyAutomationMarkdown(entry.formName, entry.formCode)
+            );
+            writtenCount++;
+            emptyCount++;
+          }
+
+          fileService.updateLastSyncTime(codeFolderPath, appSuffix);
+
+          const totalCount = formAutomations.reduce((sum, form) => sum + form.automations.length, 0);
+          const skippedSummary = skippedCount > 0 ? `, 跳过本地未同步的表单: ${skippedCount}` : '';
+          const summary = `自动化同步完成! 表单: ${writtenCount}, 自动化: ${totalCount}, 无自动化表单: ${emptyCount}${skippedSummary}`;
+          syncSummary = summary;
+          vscode.window.showInformationMessage(summary);
+          return;
+        }
 
         // Step 1: 获取最新的表单列表
         let forms;
@@ -369,6 +517,14 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
+
+          // 同步代码不处理表单增减,遇到空列表时保留本地全部表单目录和配置。
+          if (!handlesStructure) {
+            fileService.updateLastSyncTime(codeFolderPath, appSuffix);
+            syncSummary = `${scopeLabel}同步完成! 该应用下没有表单,已保留本地现有表单目录`;
+            return;
+          }
+
           for (const suffix of Object.keys(config.forms || {})) {
             const formFolderPath = path.join(appFolderPath, buildFolderName(config.forms[suffix].formName, suffix));
             fileService.deleteFolderIfExists(formFolderPath);
@@ -386,14 +542,16 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           fileService.updateLastSyncTime(codeFolderPath, appSuffix);
           fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
           saveProjectReadme(codeFolderPath);
-          syncSummary = '同步完成! 该应用下没有表单';
+          syncSummary = `${scope === 'all' ? '同步完成!' : `${scopeLabel}同步完成!`} 该应用下没有表单`;
           return;
         }
 
         // Step 2: 预先检测所有冲突
         progress.report({ message: '正在检测文件差异...', increment: 10 });
 
-        for (const form of forms) {
+        // 表单重命名属于结构变更,只有处理结构的范围才执行。
+        const structureForms = handlesStructure ? forms : [];
+        for (const form of structureForms) {
           const existingEntry = findFormByCode(config.forms, form.formCode);
           if (!existingEntry || existingEntry.entry.formName === form.formName) continue;
 
@@ -415,29 +573,40 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           );
         }
         
-        // 首先获取所有表单的代码以便检测冲突
-        const formCodesMap = new Map<string, FileContentMap>();
-        await mapWithConcurrency(forms, FORM_REQUEST_CONCURRENCY, async (form) => {
+        // 首先获取本次同步范围内的表单内容,用于检测冲突。
+        // 同步代码只为本地已有表单目录拉取内容,跳过的表单不发请求。
+        const targetForms = handlesStructure ? forms : forms.filter((form) => {
+          const entry = findFormByCode(config.forms, form.formCode);
+          return !!entry && !!findFormFolderBySuffix(appFolderPath, entry.suffix);
+        });
+
+        const formCodesMap = new Map<string, Partial<FileContentMap>>();
+        await mapWithConcurrency(targetForms, FORM_REQUEST_CONCURRENCY, async (form) => {
           try {
-            const codes = await h3yunApi.getFormAllCodes(form.formCode);
+            const codes = await h3yunApi.getFormCodes(form.formCode, scope);
             formCodesMap.set(form.formCode, codes);
           } catch (error) {
-            console.error(`获取表单 "${form.formName}" 代码失败:`, error);
+            console.error(`获取表单 "${form.formName}" ${contentLabel}失败:`, error);
           }
         });
 
         // 检测冲突数量
         let conflictCount = 0;
-        for (const form of forms) {
+        for (const form of targetForms) {
           const existingEntry = findFormByCode(config.forms, form.formCode);
           if (!existingEntry) continue;
 
-          const formFolderPath = path.join(appFolderPath, buildFolderName(existingEntry.entry.formName, existingEntry.suffix));
+          const formFolderPath = handlesStructure
+            ? path.join(appFolderPath, buildFolderName(existingEntry.entry.formName, existingEntry.suffix))
+            : findFormFolderBySuffix(appFolderPath, existingEntry.suffix);
+          if (!formFolderPath) continue;
+
           const codes = formCodesMap.get(form.formCode);
           if (!codes) continue;
 
           for (const [filename, remoteContent] of Object.entries(codes)) {
-            if (filename === 'fields.md') continue;
+            // 字段表不参与冲突检测,同步时直接覆盖
+            if (filename === 'fields.md' || remoteContent === undefined) continue;
 
             const localPath = path.join(formFolderPath, filename);
             try {
@@ -471,6 +640,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         const totalForms = forms.length;
         let successCount = 0;
         let failCount = 0;
+        let skippedCount = 0;
 
         for (let i = 0; i < totalForms; i++) {
           const form = forms[i];
@@ -482,18 +652,36 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
           let createdFormFolderPath: string | undefined;
           const existingEntry = findFormByCode(config.forms, form.formCode);
+
+          // 同步代码只处理本地已有表单目录:
+          // 氚云新增的表单、配置有记录但目录已不存在的表单都直接跳过,不新建目录。
+          // 目录按后缀定位,避免表单在氚云改名后本地目录名与配置不一致导致写错位置。
+          let lockedFormFolderPath: string | undefined;
+          if (!handlesStructure) {
+            lockedFormFolderPath = existingEntry
+              ? findFormFolderBySuffix(appFolderPath, existingEntry.suffix)
+              : undefined;
+
+            if (!lockedFormFolderPath) {
+              console.log(`同步代码跳过本地不存在的表单目录: ${form.formName}(${form.formCode})`);
+              skippedCount++;
+              continue;
+            }
+          }
+
           try {
-            let formFolderPath: string | undefined;
+            let formFolderPath: string | undefined = lockedFormFolderPath;
             let formSuffix: string | undefined;
 
             if (existingEntry) {
               formSuffix = existingEntry.suffix;
-              formFolderPath = path.join(appFolderPath, buildFolderName(existingEntry.entry.formName, formSuffix));
+              formFolderPath = formFolderPath
+                || path.join(appFolderPath, buildFolderName(existingEntry.entry.formName, formSuffix));
             }
 
             const codes = formCodesMap.get(form.formCode);
             if (!codes) {
-              throw new Error('无法获取表单代码');
+              throw new Error(`无法获取${fetchLabel}`);
             }
 
             if (!existingEntry) {
@@ -513,6 +701,8 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
             }
 
             for (const [filename, remoteContent] of Object.entries(codes)) {
+              if (remoteContent === undefined) continue;
+
               const localPath = path.join(formFolderPath, filename);
 
               if (filename === 'fields.md') {
@@ -559,7 +749,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         }
 
         let deletedFormCount = 0;
-        if (failCount === 0) {
+        if (handlesStructure && failCount === 0) {
           // 已知表单的 LoadForm 异常会提前终止同步,这里仅清理明确不在节点列表中的旧目录。
           const latestFormCodes = new Set(forms.map((form) => form.formCode));
           const deletedFormSuffixes = new Set(
@@ -578,6 +768,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
         }
 
         // Step 4: 更新 cmax.json 配置文件
+        // 同步代码不处理表单增减,保留原有表单映射,避免把已删除或新增的表单误写进配置。
         progress.report({ message: '正在更新配置文件...', increment: 95 });
         fileService.createCmaxConfig(
           codeFolderPath,
@@ -585,7 +776,7 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
           config.appCode,
           workspaceConfig.engineCode || '',
           config.appName,
-          updatedFormsRecord,
+          handlesStructure ? updatedFormsRecord : config.forms,
           workspaceConfig.h3yunApiVersion,
           workspaceConfig.systemUserId
         );
@@ -597,7 +788,9 @@ export async function handleSyncProject(uri?: vscode.Uri): Promise<void> {
 
         // 显示同步结果
         const deletedSummary = deletedFormCount > 0 ? `, 删除表单: ${deletedFormCount}` : '';
-        const summary = `同步完成! 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${deletedSummary}`;
+        const skippedSummary = skippedCount > 0 ? `, 跳过本地未同步的表单: ${skippedCount}` : '';
+        const completionPrefix = scope === 'all' ? '同步完成!' : `${scopeLabel}同步完成!`;
+        const summary = `${completionPrefix} 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${skippedSummary}${deletedSummary}`;
         syncSummary = summary;
         
         if (failCount === 0) {

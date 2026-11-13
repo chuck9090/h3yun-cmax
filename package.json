@@ -2,7 +2,7 @@
   "name": "h3yun-cmax",
   "displayName": "H3Yun CMax",
   "description": "氚云低代码平台二开代码同步工具 - 自动从氚云平台同步应用代码到本地,实现版本管理和AI辅助开发",
-  "version": "1.2.8",
+  "version": "1.3.0",
   "publisher": "ChuckFu",
   "license": "GPL-3.0-only",
   "repository": {
@@ -31,12 +31,30 @@
         "title": "从氚云同步"
       },
       {
+        "command": "h3yun-cmax.syncFormDesign",
+        "title": "同步表单设计"
+      },
+      {
+        "command": "h3yun-cmax.syncCode",
+        "title": "同步代码"
+      },
+      {
+        "command": "h3yun-cmax.syncAutomation",
+        "title": "同步自动化"
+      },
+      {
         "command": "h3yun-cmax.updateProjectToken",
         "title": "更新氚云 Token"
       },
       {
         "command": "h3yun-cmax.queryFormName",
         "title": "查询氚云表单名称"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "h3yun-cmax.syncSubmenu",
+        "label": "从氚云分项同步"
       }
     ],
     "menus": {
@@ -46,6 +64,18 @@
         },
         {
           "command": "h3yun-cmax.syncProject",
+          "when": "explorerResourceIsFolder"
+        },
+        {
+          "command": "h3yun-cmax.syncFormDesign",
+          "when": "explorerResourceIsFolder"
+        },
+        {
+          "command": "h3yun-cmax.syncCode",
+          "when": "explorerResourceIsFolder"
+        },
+        {
+          "command": "h3yun-cmax.syncAutomation",
           "when": "explorerResourceIsFolder"
         },
         {
@@ -60,12 +90,31 @@
         {
           "command": "h3yun-cmax.syncProject",
           "when": "explorerResourceIsFolder",
-          "group": "2_workspace"
+          "group": "2_workspace@1"
+        },
+        {
+          "submenu": "h3yun-cmax.syncSubmenu",
+          "when": "explorerResourceIsFolder",
+          "group": "2_workspace@2"
         },
         {
           "command": "h3yun-cmax.updateProjectToken",
           "when": "explorerResourceIsFolder",
-          "group": "2_workspace"
+          "group": "2_workspace@3"
+        }
+      ],
+      "h3yun-cmax.syncSubmenu": [
+        {
+          "command": "h3yun-cmax.syncFormDesign",
+          "group": "1_sync@1"
+        },
+        {
+          "command": "h3yun-cmax.syncCode",
+          "group": "1_sync@2"
+        },
+        {
+          "command": "h3yun-cmax.syncAutomation",
+          "group": "1_sync@3"
         }
       ],
       "editor/context": [
