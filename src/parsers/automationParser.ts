@@ -6,6 +6,7 @@ import {
   FormAutomations
 } from '../types';
 import { FieldLabelIndex } from '../services/fieldLabelService';
+import { formatDateTime } from '../utils/dateUtils';
 
 /**
  * 自动化列表接口响应结构。
@@ -864,7 +865,6 @@ function parseAutomation(
   // 启用状态兼容 true/1/"1" 等表示法；无法判断时按启用处理，避免把在用配置误标为停用
   const enabledValue = getBoolean(model, 'State');
   const sortKeyValue = getNumber(model, 'SortKey');
-
   return {
     objectId: getString(model, 'ObjectId'),
     displayName: getString(model, 'DisplayName'),
@@ -879,7 +879,7 @@ function parseAutomation(
     updatedFields,
     actions,
     modifiedName: getString(model, 'ModifiedName') || undefined,
-    modifiedTime: modifiedTimeValue ? String(modifiedTimeValue) : undefined
+    modifiedTime: formatDateTime(modifiedTimeValue)
   };
 }
 

@@ -470,11 +470,12 @@ ReturnData.Triggers[]           每个元素是一个表单
         ├── ExcuteType          触发类型
         ├── Condition           触发条件
         ├── Action[]            执行动作
-        └── ModifiedTime
+        └── ModifiedTime        最后修改时间,格式为 `/Date(毫秒)/`
 ```
 
 解析时需要注意的几处结构：
 
+- `ModifiedTime`：接口返回的是 .NET JSON 日期 `/Date(1794284420000)/`（JSON 文本里写作 `\/Date(...)\/`），毫秒为 UTC 时间戳。直接用 `String()` 输出会得到不可读的原始形式，必须经 `src/utils/dateUtils.ts` 的 `formatDateTime()` 转成 `yyyy-MM-dd HH:mm:ss` 本地时间再写入 Markdown。
 - `ExcuteType`：`111` 数据生效时、`112` 数据更新时、`113` 数据失效时、`114` 数据生效或更新时、`100` 定时触发、`401` 自定义触发、`60` 日期字段触发、`10` 数据发生变化时。
 - `Condition.Expression`：二维数组，外层是条件组、内层是条件，**组间为“或”、组内为“且”**。条件节点字段为 `PropertyName`、`Operator`、`ValueType`、`Value`。
 - `Condition.Schedule.Value`：定时触发配置，`Frequency`（0 仅一次、1 每天、2 每周、3 每月、4 每年、5 自定义）、`Repeat`（每周为星期 1-7，每月为日期、`-1` 表示最后一天）、`Time`、`TriggerEndTime`、`SkipHolidays`。
