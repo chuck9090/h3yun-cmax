@@ -88,7 +88,7 @@ export interface FileContentMap {
 
 /**
  * 同步范围。
- * - all：表单设计与代码（不含自动化；自动化需单独执行“同步自动化”）
+ * - all：表单设计、代码与自动化
  * - formDesign：仅同步表单设计（字段表 fields.md）
  * - code：仅同步表单与列表的前后端代码
  * - automation：仅同步自动化配置（automation.md）

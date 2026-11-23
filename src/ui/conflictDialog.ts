@@ -11,6 +11,24 @@ export enum ConflictResolution {
 }
 
 /**
+ * 单个同步过程中跨文件的冲突处理状态。
+ * 用于支持“跳过后续所有差异确认”这类一次性决策,避免为每个文件反复弹窗。
+ */
+export interface ConflictSession {
+  /** 是否已选择跳过后续所有差异确认 */
+  skipRemaining: boolean;
+  /** 因“跳过后续”而自动跳过的文件数 */
+  skippedBySession: number;
+}
+
+/**
+ * 创建一次同步使用的冲突处理状态。
+ */
+export function createConflictSession(): ConflictSession {
+  return { skipRemaining: false, skippedBySession: 0 };
+}
+
+/**
  * 文件冲突信息
  */
 export interface FileConflict {

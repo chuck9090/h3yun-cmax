@@ -165,8 +165,16 @@ function getWebviewHtml(options: DiffPreviewOptions, nonce: string): string {
 
     .toolbar {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       margin-top: 12px;
+    }
+
+    .hint {
+      margin-top: 8px;
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     button {
@@ -300,7 +308,10 @@ function getWebviewHtml(options: DiffPreviewOptions, nonce: string): string {
     <div class="toolbar">
       <button data-action="local">使用本地版本</button>
       <button data-action="remote">使用远程版本</button>
-      <button class="secondary" data-action="skip">跳过</button>
+      <button class="secondary" data-action="skip">放弃确认</button>
+    </div>
+    <div class="hint">
+      点「放弃确认」将放弃本次逐项确认：从当前文件起，剩余差异全部保留本地版本、不再弹窗。之后可重新执行同步，在批量提示中统一选择本地或氚云版本。
     </div>
   </header>
   <main>

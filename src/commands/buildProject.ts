@@ -9,6 +9,8 @@ import { CmaxFormEntry } from '../types';
 import { buildFolderName, CODE_FOLDER_NAME, createFolder, getCodeFolderPath } from '../utils/folderUtils';
 import { mapWithConcurrency } from '../utils/promiseUtils';
 import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
+import { collectAllFieldLabels } from '../services/fieldLabelService';
+import { writeAutomationFiles } from '../services/automationSync';
 
 /**
  * 构建项目命令处理器
@@ -248,14 +250,26 @@ export async function handleBuildProject(): Promise<void> {
           codeFolderPath, appSuffix, appCode, engineCode, application.appName, orderedFormsRecord,
           workspaceConfig.h3yunApiVersion, systemUserId || undefined
         );
+
+        // 自动化按应用一次性获取,直接覆盖写入各表单目录,不参与代码冲突处理。
+        progress.report({ message: '正在获取自动化配置...', increment: 95 });
+        const automationResult = await h3yunApi.getAutomations(
+          appCode,
+          collectAllFieldLabels(codeFolderPath)
+        );
+        const automationSummary = writeAutomationFiles(
+          appFolderPath,
+          orderedFormsRecord,
+          automationResult.formAutomations
+        );
         fileService.saveToken(codeFolderPath, h3Token);
         fileService.ensureGitIgnore(codeFolderPath);
-         fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
+        fileService.saveFailedNodesReport(codeFolderPath, application.appName, []);
         saveProjectReadme(codeFolderPath);
 
         progress.report({ message: '完成!', increment: 100 });
 
-        buildSummary = `项目构建成功! 共处理 ${Object.keys(orderedFormsRecord).length}/${totalForms} 个表单`;
+        buildSummary = `项目构建成功! 共处理 ${Object.keys(orderedFormsRecord).length}/${totalForms} 个表单, 自动化: ${automationSummary.automationCount}`;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`构建项目失败: ${errorMessage}`);

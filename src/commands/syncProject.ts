@@ -2,27 +2,23 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
-import { gitService } from '../services/gitService';
 import { saveProjectReadme } from '../services/projectReadme';
 import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap, SyncScope } from '../types';
 import { collectAllFieldLabels } from '../services/fieldLabelService';
-import {
-  AUTOMATION_FILENAME,
-  buildAutomationMarkdown,
-  buildEmptyAutomationMarkdown
-} from '../services/automationReport';
+import { writeAutomationFiles } from '../services/automationSync';
 import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
 import { mapWithConcurrency } from '../utils/promiseUtils';
 import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
-import { promptForCommitMessage } from '../ui/gitCommitPrompt';
 import { promptForUpdateGuide } from '../ui/updateGuide';
 import { 
   showBatchConflictDialog, 
   ConflictResolution, 
   BatchConflictResolution,
+  ConflictSession,
+  createConflictSession,
   FileConflict 
 } from '../ui/conflictDialog';
 
@@ -86,31 +82,44 @@ async function ensureEngineCode(workspaceConfig: CmaxWorkspaceConfig, codeFolder
   return engineCode;
 }
 
-async function promptAndCommit(codeFolderPath: string, appFolderPath: string, summary: string, appName: string): Promise<void> {
-  const commitMessage = await promptForCommitMessage(summary, appName);
-  if (!commitMessage) {
-    return;
-  }
+type AutomationFetchResult = Awaited<ReturnType<typeof h3yunApi.getAutomations>>;
+
+/**
+ * 获取应用自动化配置,Token 失效时重新输入后重试。
+ * 整体同步在写入表单文件前调用,避免自动化失败后留下部分同步结果。
+ */
+async function fetchAutomationsWithTokenRetry(
+  config: CmaxConfig,
+  workspaceConfig: CmaxWorkspaceConfig,
+  engineCode: string,
+  codeFolderPath: string,
+  reportProgress: (message: string, increment?: number) => void
+): Promise<AutomationFetchResult> {
+  const labels = collectAllFieldLabels(codeFolderPath);
+  const fetchAutomations = () => h3yunApi.getAutomations(config.appCode, labels);
 
   try {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: '正在提交本次同步变更',
-        cancellable: false
-      },
-      async (progress) => {
-        progress.report({ message: '正在执行 git add 和 git commit...' });
-        await gitService.initAndCommit(codeFolderPath, commitMessage, appFolderPath);
-      }
-    );
+    return await fetchAutomations();
+  } catch (apiError) {
+    const errorMsg = apiError instanceof Error ? apiError.message : String(apiError);
+    if (!/401|认证|token/i.test(errorMsg)) {
+      throw apiError;
+    }
 
-    vscode.window.showInformationMessage('本次同步变更已提交');
-  } catch (error) {
-    vscode.window.showWarningMessage(
-      `Git 提交失败: ${error instanceof Error ? error.message : String(error)}`,
-      { modal: true }
+    const newToken = await promptForTokenWithProjectInfo(
+      config,
+      workspaceConfig,
+      'Token 已失效,请重新输入 h3_token 后继续同步'
     );
+    if (!newToken) {
+      throw new Error('已取消同步');
+    }
+
+    h3yunApi.setToken(newToken, engineCode);
+    fileService.saveToken(codeFolderPath, newToken);
+    fileService.ensureGitIgnore(codeFolderPath);
+    reportProgress('正在使用新 Token 重新获取自动化配置...', 10);
+    return await fetchAutomations();
   }
 }
 
@@ -121,6 +130,7 @@ async function promptAndCommit(codeFolderPath: string, appFolderPath: string, su
  * @param formName 表单名称
  * @param filename 文件名
  * @param batchResolution 批量解决方案(如果有)
+ * @param session 跨文件的冲突处理状态,用于支持“跳过后续所有差异确认”
  * @returns 最终使用的内容,null 表示跳过
  */
 async function handleFileConflict(
@@ -128,7 +138,8 @@ async function handleFileConflict(
   remoteContent: string,
   formName: string,
   filename: string,
-  batchResolution: BatchConflictResolution | null
+  batchResolution: BatchConflictResolution | null,
+  session: ConflictSession
 ): Promise<string | null> {
   // 读取本地文件
   let localContent: string;
@@ -143,6 +154,12 @@ async function handleFileConflict(
   if (!hasFileConflict(localContent, remoteContent)) {
     // 没有差异,无需处理
     return null; // null 表示不需要更新
+  }
+
+  // 用户此前点过“跳过”:后续差异一律保留本地版本且不再弹窗
+  if (session.skipRemaining) {
+    session.skippedBySession++;
+    return null;
   }
 
   // 有冲突,根据批量策略处理
@@ -169,13 +186,19 @@ async function handleFileConflict(
     remoteContent
   });
 
-  if (resolution === ConflictResolution.USE_LOCAL || resolution === null) {
-    return null; // 使用本地版本或取消
-  } else if (resolution === ConflictResolution.USE_REMOTE) {
+  if (resolution === ConflictResolution.USE_REMOTE) {
     return remoteContent; // 使用远程版本
-  } else {
-    return null; // 跳过
   }
+
+  if (resolution === ConflictResolution.SKIP) {
+    // 用户放弃本次逐项确认：当前文件保留本地版本,并让本次同步剩余差异全部跳过。
+    // 当前文件本身也算被跳过的差异,一并计数。
+    session.skipRemaining = true;
+    session.skippedBySession++;
+    return null;
+  }
+
+  return null; // 使用本地版本或直接关闭面板
 }
 
 /**
@@ -227,7 +250,7 @@ async function syncAppFolderName(
  * 各同步范围在提示文案中的名称
  */
 const SYNC_SCOPE_LABELS: Record<SyncScope, string> = {
-  all: '表单设计与代码',
+  all: '表单设计、代码与自动化',
   formDesign: '表单设计',
   code: '代码',
   automation: '自动化'
@@ -254,12 +277,11 @@ function findFormFolderBySuffix(appFolderPath: string, suffix: string): string |
 /**
  * 同步项目命令处理器
  * @param uri 选中的文件夹 URI(从右键菜单传入)
- * @param scope 同步范围,默认同步表单设计与代码
+ * @param scope 同步范围,默认同步表单设计、代码与自动化
  */
 export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'all'): Promise<void> {
   let appFolderPath: string;
   let codeFolderPath: string;
-  let syncSummary: string | undefined;
 
   // 获取应用文件夹路径
   if (uri) {
@@ -379,95 +401,26 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
         // 放在这里后，同步自动化对每个应用只发 1 次请求，并发压力最小。
         if (scope === 'automation') {
           progress.report({ message: '正在获取自动化配置...', increment: 20 });
-
-          const labels = collectAllFieldLabels(codeFolderPath);
-          const fetchAutomations = () => h3yunApi.getAutomations(config.appCode, labels);
-
-          let result: Awaited<ReturnType<typeof h3yunApi.getAutomations>>;
-          try {
-            result = await fetchAutomations();
-          } catch (apiError) {
-            const errorMsg = apiError instanceof Error ? apiError.message : String(apiError);
-
-            // Token 失效时提示重新输入，与表单同步的处理保持一致
-            if (!/401|认证|token/i.test(errorMsg)) {
-              throw apiError;
-            }
-
-            const newToken = await promptForTokenWithProjectInfo(
-              config,
-              workspaceConfig,
-              'Token 已失效,请重新输入 h3_token 后继续同步'
-            );
-
-            if (!newToken) {
-              throw new Error('已取消同步');
-            }
-
-            h3yunApi.setToken(newToken, engineCode);
-            fileService.saveToken(codeFolderPath, newToken);
-            fileService.ensureGitIgnore(codeFolderPath);
-
-            progress.report({ message: '正在使用新 Token 重新获取自动化配置...', increment: 10 });
-            result = await fetchAutomations();
-          }
+          const result = await fetchAutomationsWithTokenRetry(
+            config,
+            workspaceConfig,
+            engineCode,
+            codeFolderPath,
+            (message, increment) => progress.report({ message, increment })
+          );
 
           const { formAutomations } = result;
           progress.report({ message: '正在写入 automation.md...', increment: 50 });
 
-          // 以接口返回的自动化分组为准,只写入本地已存在目录的表单。
-          const suffixByFormCode = new Map(
-            Object.entries(config.forms).map(([suffix, entry]) => [entry.formCode, suffix])
-          );
+           const automationSummary = writeAutomationFiles(appFolderPath, config.forms, formAutomations);
 
-          let writtenCount = 0;
-          let emptyCount = 0;
-          let skippedCount = 0;
+           fileService.updateLastSyncTime(codeFolderPath, appSuffix);
 
-          for (const form of formAutomations) {
-            const suffix = suffixByFormCode.get(form.schemaCode);
-            const formFolderPath = suffix ? findFormFolderBySuffix(appFolderPath, suffix) : undefined;
-
-            if (!suffix || !formFolderPath) {
-              console.log(`同步自动化跳过本地不存在的表单目录: ${form.formName}(${form.schemaCode})`);
-              skippedCount++;
-              continue;
-            }
-
-            // buildAutomationMarkdown 内部已处理“没有自动化”的情况,无需再分支
-            fileService.saveFile(
-              path.join(formFolderPath, AUTOMATION_FILENAME),
-              buildAutomationMarkdown(form)
-            );
-            writtenCount++;
-            if (form.automations.length === 0) {
-              emptyCount++;
-            }
-          }
-
-          // 本地有目录但氚云侧已无自动化记录的表单,写入“没有自动化”的说明,避免残留旧内容。
-          const handledCodes = new Set(formAutomations.map((form) => form.schemaCode));
-          for (const [suffix, entry] of Object.entries(config.forms)) {
-            if (handledCodes.has(entry.formCode)) continue;
-
-            const formFolderPath = findFormFolderBySuffix(appFolderPath, suffix);
-            if (!formFolderPath) continue;
-
-            fileService.saveFile(
-              path.join(formFolderPath, AUTOMATION_FILENAME),
-              buildEmptyAutomationMarkdown(entry.formName, entry.formCode)
-            );
-            writtenCount++;
-            emptyCount++;
-          }
-
-          fileService.updateLastSyncTime(codeFolderPath, appSuffix);
-
-          const totalCount = formAutomations.reduce((sum, form) => sum + form.automations.length, 0);
-          const skippedSummary = skippedCount > 0 ? `, 跳过本地未同步的表单: ${skippedCount}` : '';
-          const summary = `自动化同步完成! 表单: ${writtenCount}, 自动化: ${totalCount}, 无自动化表单: ${emptyCount}${skippedSummary}`;
-          syncSummary = summary;
-          vscode.window.showInformationMessage(summary);
+           const skippedSummary = automationSummary.skippedCount > 0
+             ? `, 跳过本地未同步的表单: ${automationSummary.skippedCount}`
+             : '';
+           const summary = `自动化同步完成! 表单: ${automationSummary.writtenCount}, 自动化: ${automationSummary.automationCount}, 无自动化表单: ${automationSummary.emptyCount}${skippedSummary}`;
+           vscode.window.showInformationMessage(summary);
           return;
         }
 
@@ -515,13 +468,32 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
           throw new Error('表单列表获取异常,已取消本次同步');
         }
 
+        // 整体同步先确认自动化接口可用,再进行目录、配置和表单代码写入。
+        // 这样自动化请求失败时不会留下“代码已更新、自动化未更新”的部分结果。
+        let automationResult: AutomationFetchResult | undefined;
+        let automationSummary: ReturnType<typeof writeAutomationFiles> | undefined;
+        if (scope === 'all') {
+          progress.report({ message: '正在获取自动化配置...', increment: 10 });
+          automationResult = await fetchAutomationsWithTokenRetry(
+            config,
+            workspaceConfig,
+            engineCode,
+            codeFolderPath,
+            (message, increment) => progress.report({ message, increment })
+          );
+        }
+
         if (forms.length === 0) {
           vscode.window.showWarningMessage('该应用下没有表单');
+
+          if (scope === 'all' && automationResult) {
+            // 远端没有表单时先清理旧表单的自动化文件,随后按整体同步规则删除旧目录。
+            automationSummary = writeAutomationFiles(appFolderPath, config.forms, automationResult.formAutomations);
+          }
 
           // 同步代码不处理表单增减,遇到空列表时保留本地全部表单目录和配置。
           if (!handlesStructure) {
             fileService.updateLastSyncTime(codeFolderPath, appSuffix);
-            syncSummary = `${scopeLabel}同步完成! 该应用下没有表单,已保留本地现有表单目录`;
             return;
           }
 
@@ -542,7 +514,6 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
           fileService.updateLastSyncTime(codeFolderPath, appSuffix);
           fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
           saveProjectReadme(codeFolderPath);
-          syncSummary = `${scope === 'all' ? '同步完成!' : `${scopeLabel}同步完成!`} 该应用下没有表单`;
           return;
         }
 
@@ -632,6 +603,9 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
           }
         }
 
+        // 逐个询问时,允许用户在某个文件上选择“跳过后续所有差异确认”,之后不再弹窗
+        const conflictSession = createConflictSession();
+
         // Step 3: 循环处理每个表单
         const updatedFormsRecord: Record<string, CmaxFormEntry> = {};
         const usedFormMappings = new Map(
@@ -641,7 +615,6 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
         let successCount = 0;
         let failCount = 0;
         let skippedCount = 0;
-
         for (let i = 0; i < totalForms; i++) {
           const form = forms[i];
 
@@ -714,7 +687,8 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
                   remoteContent,
                   form.formName,
                   filename,
-                  batchResolution
+                  batchResolution,
+                  conflictSession
                 );
 
                 if (finalContent !== null && finalContent !== undefined) {
@@ -780,8 +754,17 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
           workspaceConfig.h3yunApiVersion,
           workspaceConfig.systemUserId
         );
+
+        if (scope === 'all' && automationResult) {
+          // 整体同步同时更新自动化,直接覆盖 automation.md,不参与代码冲突确认。
+          automationSummary = writeAutomationFiles(
+            appFolderPath,
+            handlesStructure ? updatedFormsRecord : config.forms,
+            automationResult.formAutomations
+          );
+        }
         fileService.updateLastSyncTime(codeFolderPath, appSuffix);
-         fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
+        fileService.saveFailedNodesReport(codeFolderPath, config.appName, loadFormFailures);
         saveProjectReadme(codeFolderPath);
 
         progress.report({ message: '完成!', increment: 100 });
@@ -790,9 +773,22 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
         const deletedSummary = deletedFormCount > 0 ? `, 删除表单: ${deletedFormCount}` : '';
         const skippedSummary = skippedCount > 0 ? `, 跳过本地未同步的表单: ${skippedCount}` : '';
         const completionPrefix = scope === 'all' ? '同步完成!' : `${scopeLabel}同步完成!`;
-        const summary = `${completionPrefix} 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${skippedSummary}${deletedSummary}`;
-        syncSummary = summary;
-        
+        const automationText = automationSummary
+          ? `, 自动化: ${automationSummary.automationCount}`
+          : '';
+        const summary = `${completionPrefix} 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${skippedSummary}${deletedSummary}${automationText}`;
+
+        // 用户在差异预览里点过“放弃确认”:差异文件全部保留本地版本,需要明确引导重新同步并统一处理
+        const conflictSkipCount = conflictSession.skippedBySession;
+        if (conflictSkipCount > 0) {
+          vscode.window.showWarningMessage(
+            `${summary}\n\n已放弃差异确认: 共 ${conflictSkipCount} 个有差异的文件保留了本地版本。\n`
+            + '如需统一处理,请重新执行一次同步,并在批量提示中选择“全部使用本地版本”或“全部使用远程版本”。',
+            { modal: true }
+          );
+          return;
+        }
+
         if (failCount === 0) {
           vscode.window.showInformationMessage(summary);
         } else {
@@ -806,7 +802,6 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
     }
   );
 
-  if (syncSummary && await gitService.hasApplicationChanges(codeFolderPath, appFolderPath)) {
-    await promptAndCommit(codeFolderPath, appFolderPath, syncSummary, config.appName);
-  }
+  // 同步不再按应用单独提交 Git。整个“氚云代码”目录由系统统一管理 Git,
+  // 因此保留本次文件变更,不弹出 commit 信息确认。
 }
