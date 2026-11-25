@@ -3,7 +3,7 @@
 - [x] 优化构建项目 Webview 表单的主题适配。
    当前应用编码、`enginecode`、`h3_token` 等输入框使用浅色背景，在 VSCode 深色主题下观感不一致。后续可改为使用 VSCode Webview Theme CSS Variables，例如 `--vscode-input-background`、`--vscode-input-foreground`、`--vscode-input-border`，以自动适配用户当前主题。
 
-- [x] git commit时，应该弹出输入框，默认值是：从氚云同步，但是允许用户修改。
+- [x] ~~git commit 时，应该弹出输入框，默认值是：从氚云同步，但是允许用户修改。~~（已移除：当前只有构建会提交 Git，同步不提交；构建使用固定提交信息“添加X应用”。）
 
 - [x] 优化字段表
    字段表已包含控件类型、值类型、关联表单与关联多选中间表信息，并按主表、子表生成精简的 Markdown 表格。

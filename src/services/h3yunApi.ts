@@ -73,6 +73,10 @@ class H3YunApiFacade {
     return this.service.getAutomations(appCode, fieldLabelMap);
   }
 
+  getBusinessRules(formCode: string) {
+    return this.service.getBusinessRules(formCode);
+  }
+
   getSystemUserId() {
     return this.service.getSystemUserId();
   }

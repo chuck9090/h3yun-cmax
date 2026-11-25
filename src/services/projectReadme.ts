@@ -89,7 +89,7 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('# 氚云代码项目说明');
   lines.push('');
   lines.push('本目录由 H3Yun CMax 插件从氚云平台构建或同步生成，包含项目中所有氚云应用的字段表与前后端代码，可作为 Git 仓库和 AI 辅助开发的统一代码视图。');
-  lines.push('本文件由插件自动生成，每次执行“从氚云构建项目”或“从氚云同步”后都会按最新结构重写，请勿手工修改。');
+  lines.push('本文件由插件自动生成，在“从氚云构建项目”“从氚云同步”“同步表单设计”或“同步代码”后按最新结构重写，请勿手工修改；同步自动化和同步业务规则不会重写本文件。');
   lines.push('');
 
   lines.push('## 一、目录结构');
@@ -101,21 +101,23 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('├── .h3token                      # 本地氚云认证 Token（已被 .gitignore 忽略，不提交）');
   lines.push('├── .gitignore                    # 忽略 Token、失败报告和常见 AI 工具本地目录');
   lines.push('├── failed-nodes(应用名称).md     # 节点获取失败报告（仅在出现失败时生成）');
-  lines.push('├── 应用名称(a1b2c3)/             # 一个氚云应用一个目录');
-  lines.push('│   ├── 表单名称(f1a2b3)/         # 一个表单一个目录，直接平铺在应用目录下');
+  lines.push('├── 应用名称(a1a2b3c)/            # 一个氚云应用一个目录');
+  lines.push('│   ├── 表单名称(f1a2b3c)/        # 一个表单一个目录，直接平铺在应用目录下');
   lines.push('│   │   ├── fields.md             # 字段表');
   lines.push('│   │   ├── form-frontend.js      # 表单前端代码');
   lines.push('│   │   ├── form-backend.cs       # 表单后端代码');
   lines.push('│   │   ├── list-frontend.js      # 列表前端代码');
   lines.push('│   │   ├── list-backend.cs       # 列表后端代码');
-  lines.push('│   │   └── automation.md         # 自动化配置（执行“同步自动化”后生成）');
+  lines.push('│   │   ├── automation.md         # 自动化配置（构建、整体同步或“同步自动化”后生成）');
+  lines.push('│   │   └── business-rule.md      # 业务规则（“同步业务规则”后生成，仅老版本氚云支持）');
   lines.push('│   └── ...');
   lines.push('└── ...');
   lines.push('```');
   lines.push('');
-  lines.push('- 应用目录、表单目录名称后面的 `(a1b2c3)`、`(f1a2b3)` 是由氚云编码计算出的稳定后缀，用于避免同名目录冲突；完整对应关系记录在 `cmax.json` 中。');
+  lines.push('- 应用目录、表单目录名称后面的 `(a1a2b3c)`、`(f1a2b3c)` 是由氚云编码计算出的稳定后缀，用于避免同名目录冲突；完整对应关系记录在 `cmax.json` 中。');
   lines.push('- 本地目录只保留“应用 → 表单”两层：氚云系统中的“分组”不会生成文件夹，同一应用下的所有表单目录都直接放在应用目录下。');
-  lines.push('- `automation.md` 只在执行“从氚云分项同步 → 同步自动化”后生成；一个表单的多个自动化都记录在同一个文件里，不会为每个自动化单独建文件。');
+  lines.push('- `automation.md` 可由构建、整体同步或“同步自动化”生成；一个表单的多个自动化都记录在同一个文件里，不会为每个自动化单独建文件。');
+  lines.push('- `business-rule.md` 只在执行“从氚云分项同步 → 同步业务规则”后生成；业务规则仅老版本氚云支持，新版氚云已禁用该功能。');
   lines.push('- 资源管理器按文件夹名称排序，与氚云系统中应用菜单的实际顺序不同。查找表单时，请以本文档“系统结构”章节或 `cmax.json` 中的记录顺序为准。');
   lines.push('');
 
@@ -132,12 +134,12 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('  "h3yunApiVersion": "new",');
   lines.push('  "systemUserId": "System 用户的 ObjectId",');
   lines.push('  "apps": {');
-  lines.push('    "a1b2c3": {');
+  lines.push('    "a1a2b3c": {');
   lines.push('      "appCode": "应用编码",');
   lines.push('      "appName": "应用名称",');
   lines.push('      "lastSyncTime": "最后同步时间（ISO 格式）",');
   lines.push('      "forms": {');
-  lines.push('        "f1a2b3": {');
+  lines.push('        "f1a2b3c": {');
   lines.push('          "formCode": "表单编码",');
   lines.push('          "formName": "表单名称",');
   lines.push('          "groupPath": ["分组名称"]');
@@ -152,8 +154,8 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('- `engineCode`：企业引擎编码，同一“氚云代码”目录下的所有应用共用。');
   lines.push('- `h3yunApiVersion`：氚云接口版本，`new` 为新版接口，`legacy` 为老版接口。');
   lines.push('- `systemUserId`：System 用户的 ObjectId，供 MCP 等工具执行 SQL 查询时使用。');
-  lines.push('- `apps`：以应用目录后缀（如 `a1b2c3`）为 key 的应用配置映射。');
-  lines.push('- `forms`：以表单目录后缀（如 `f1a2b3`）为 key 的表单配置映射；对象的书写顺序即氚云应用菜单中的表单顺序。');
+  lines.push('- `apps`：以应用目录后缀（如 `a1a2b3c`）为 key 的应用配置映射。');
+  lines.push('- `forms`：以表单目录后缀（如 `f1a2b3c`）为 key 的表单配置映射；对象的书写顺序即氚云应用菜单中的表单顺序。');
   lines.push('- `groupPath`：表单在应用菜单中的分组路径；没有该字段表示表单直接位于应用顶层。');
   lines.push('');
   lines.push('`cmax.json` 不包含 Token，可以提交到 Git，供团队共享项目结构。修改目录或表单结构后，插件会在下次同步时自动更新。');
@@ -183,7 +185,7 @@ export function buildProjectReadmeContent(config: CmaxWorkspaceConfig): string {
   lines.push('## 四、如何更新本目录');
   lines.push('');
   lines.push('- 更新单个应用：在资源管理器中右键点击应用目录，选择“从氚云同步”。');
-  lines.push('- 只更新部分内容：右键点击应用目录，选择“从氚云分项同步”，可分别同步“表单设计”“代码”“自动化”。');
+  lines.push('- 只更新部分内容：右键点击应用目录，选择“从氚云分项同步”，可分别同步“表单设计”“代码”“自动化”“业务规则”。');
   lines.push('- 新增应用：按 `Ctrl+Shift+P` 打开命令面板，执行“从氚云构建项目”。');
   lines.push('- Token 失效：按提示重新输入 Token，或右键点击“氚云代码”目录，选择“更新氚云 Token”。');
   lines.push('');

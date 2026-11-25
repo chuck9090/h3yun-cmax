@@ -287,15 +287,12 @@ function renderAutomation(automation: Automation, index: number): string[] {
  * @param form 表单自动化数据
  */
 export function buildAutomationMarkdown(form: FormAutomations): string {
-  const lines = renderHeader(form.formName, form.schemaCode, form.automations.length);
-
+  // 没有自动化时只保留一个“无”字,不输出标题和解释。
   if (form.automations.length === 0) {
-    lines.push('该表单当前没有配置自动化。');
-    lines.push('');
-    lines.push('> 如果氚云设计器里确实配置了自动化，说明本地尚未同步到；请先执行一次“同步自动化”。');
-    lines.push('');
-    return lines.join('\n');
+    return '无\n';
   }
+
+  const lines = renderHeader(form.formName, form.schemaCode, form.automations.length);
 
   lines.push(...renderReadingGuide());
 
@@ -307,8 +304,8 @@ export function buildAutomationMarkdown(form: FormAutomations): string {
 }
 
 /**
- * 为没有自动化的表单生成提示内容。
- * 保留该入口以兼容既有调用方，内部复用统一的生成逻辑。
+ * 为没有自动化的表单生成内容。
+ * 保留该入口以兼容既有调用方，内部复用统一的生成逻辑；结果只有“无”。
  */
 export function buildEmptyAutomationMarkdown(formName: string, schemaCode: string): string {
   return buildAutomationMarkdown({

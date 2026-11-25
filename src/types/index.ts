@@ -92,8 +92,9 @@ export interface FileContentMap {
  * - formDesign：仅同步表单设计（字段表 fields.md）
  * - code：仅同步表单与列表的前后端代码
  * - automation：仅同步自动化配置（automation.md）
+ * - businessRule：仅同步业务规则（business-rule.md）
  */
-export type SyncScope = 'all' | 'formDesign' | 'code' | 'automation';
+export type SyncScope = 'all' | 'formDesign' | 'code' | 'automation' | 'businessRule';
 
 /**
  * 自动化条件：组内为“且”，组间为“或”。
@@ -164,4 +165,27 @@ export interface FormAutomations {
   schemaCode: string;
   formName: string;
   automations: Automation[];
+}
+
+/**
+ * 单条业务规则（氚云设计器「表单设置 → 业务规则」）。
+ * 业务规则用于在表单数据生效/作废时对其它表单执行 INSERT、UPDATE、DELETE 等操作。
+ */
+export interface BusinessRule {
+  ruleNo: number;         // 氚云规则编号,可能重复,不代表执行顺序
+  description: string;    // 用户填写的规则备注
+  ruleStatus: number;     // 规则状态:0 启用,3 停用
+  submitCode: string;     // 数据生效时执行的代码
+  submitText: string;     // 数据生效时的可读文本
+  rollbackCode: string;   // 数据作废时执行的代码
+  rollbackText: string;   // 数据作废时的可读文本
+}
+
+/**
+ * 一个表单下的业务规则集合。
+ */
+export interface FormBusinessRules {
+  schemaCode: string;
+  formName: string;
+  rules: BusinessRule[];
 }

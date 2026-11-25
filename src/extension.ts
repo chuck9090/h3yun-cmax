@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { handleBuildProject } from './commands/buildProject';
 import { handleSyncProject } from './commands/syncProject';
 import { handleSyncAutomation } from './commands/syncAutomation';
+import { handleSyncBusinessRule } from './commands/syncBusinessRule';
 import { handleUpdateProjectToken } from './commands/updateProjectToken';
 import { handleQueryFormName } from './commands/queryFormName';
 import { registerH3yunFrontendApiProvider } from './providers/h3yunFrontendApiProvider';
@@ -89,6 +90,20 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const syncBusinessRuleCommand = vscode.commands.registerCommand(
+    'h3yun-cmax.syncBusinessRule',
+    async (uri?: vscode.Uri) => {
+      try {
+        await handleSyncBusinessRule(uri);
+      } catch (error) {
+        console.error('同步业务规则命令执行失败:', error);
+        vscode.window.showErrorMessage(
+          `同步业务规则失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+  );
+
   const updateProjectTokenCommand = vscode.commands.registerCommand(
     'h3yun-cmax.updateProjectToken',
     async (uri?: vscode.Uri) => {
@@ -116,6 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(syncFormDesignCommand);
   context.subscriptions.push(syncCodeCommand);
   context.subscriptions.push(syncAutomationCommand);
+  context.subscriptions.push(syncBusinessRuleCommand);
   context.subscriptions.push(updateProjectTokenCommand);
   context.subscriptions.push(queryFormNameCommand);
 }

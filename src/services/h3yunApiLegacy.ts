@@ -4,6 +4,7 @@ import { get, post, parseJsonResponse } from '../utils/httpUtils';
 import {
   H3Application,
   H3Form,
+  BusinessRule,
   FileContentMap,
   SyncScope
 } from '../types';
@@ -26,6 +27,10 @@ import {
   AutomaticTriggersResponse,
   parseAutomations
 } from '../parsers/automationParser';
+import {
+  FormulaEventHandlersResponse,
+  parseBusinessRules
+} from '../parsers/businessRuleParser';
 import { FieldLabelIndex } from './fieldLabelService';
 import {
   ListViewCode,
@@ -627,6 +632,31 @@ export class H3YunLegacyApiService {
         formNames: new Map()
       }
     );
+  }
+
+  /**
+   * 获取单个表单的业务规则。
+   * 接口按表单返回,同步时需要为每个表单单独请求一次。
+   * @param formCode 表单编码
+   */
+  async getBusinessRules(formCode: string): Promise<BusinessRule[]> {
+    const url = buildUrl('/Console/FormulaEventHandler/OnAction');
+    const headers = {
+      ...getAuthHeaders(),
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'SchemaCode': formCode
+    };
+    const postData = JSON.stringify({
+      ActionName: 'LoadFormulaEventHandlers',
+      SchemaCode: formCode
+    });
+    const body = `PostData=${encodeURIComponent(postData)}`;
+    const response = await post(url, body, headers);
+
+    ensureSuccessfulStatus(response.statusCode, '获取业务规则');
+    const apiResponse = parseJsonResponse<FormulaEventHandlersResponse>(response);
+    return parseBusinessRules(apiResponse);
   }
 
   /**

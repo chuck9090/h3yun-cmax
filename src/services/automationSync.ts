@@ -23,7 +23,7 @@ function findFormFolderBySuffix(appFolderPath: string, suffix: string): string |
 
 /**
  * 将应用自动化配置直接覆盖写入本地各表单目录。
- * 自动化文件不参与代码冲突确认；没有自动化的本地表单也会清理为明确的空配置说明。
+ * 自动化文件不参与代码冲突确认；没有自动化的本地表单也会清理为只包含“无”的文件。
  */
 export function writeAutomationFiles(
   appFolderPath: string,

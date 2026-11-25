@@ -13,10 +13,11 @@ H3Yun CMax 是一个 VSCode 插件，用于从氚云平台拉取应用、表单�
 - `h3yun-cmax.syncFormDesign`：分项同步，仅同步表单设计（`fields.md`）。
 - `h3yun-cmax.syncCode`：分项同步，仅同步表单与列表的前后端代码。
 - `h3yun-cmax.syncAutomation`：分项同步，仅同步自动化配置（`automation.md`）。
+- `h3yun-cmax.syncBusinessRule`：分项同步，仅同步业务规则（`business-rule.md`）。业务规则仅老版本氚云支持，新版氚云已禁用，因此不包含在“从氚云构建”和“从氚云同步”中。
 - `h3yun-cmax.updateProjectToken`：更新“氚云代码”目录共用的 Token。
 - `h3yun-cmax.queryFormName`：根据表单或子表编码查询所属表单名称。
 
-其中 `h3yun-cmax.syncFormDesign`、`h3yun-cmax.syncCode`、`h3yun-cmax.syncAutomation` 三项通过 `contributes.submenus` 组合为“从氚云分项同步”子菜单，在资源管理器选中文件夹时可用（右键菜单与命令面板均会显示）。
+其中 `h3yun-cmax.syncFormDesign`、`h3yun-cmax.syncCode`、`h3yun-cmax.syncAutomation`、`h3yun-cmax.syncBusinessRule` 四项通过 `contributes.submenus` 组合为“从氚云分项同步”子菜单，在资源管理器选中文件夹时可用（右键菜单与命令面板均会显示）。
 
 运行入口由 `package.json` 指向编译后的 `dist/extension.js`。源码位于 `src/`，通过 Webpack 打包到 `dist/`。
 
@@ -52,7 +53,7 @@ h3yun-cmax/
 
 - 注册 `从氚云构建项目` 命令。
 - 注册 `从氚云同步` 命令。
-- 注册 `从氚云分项同步` 子菜单下的 `同步表单设计`、`同步代码`、`同步自动化` 命令,分别以 `formDesign`、`code`、`automation` 范围调用同一个同步处理器。
+- 注册 `从氚云分项同步` 子菜单下的 `同步表单设计`、`同步代码`、`同步自动化`、`同步业务规则` 命令,分别以 `formDesign`、`code`、`automation`、`businessRule` 范围调用同一个同步处理器。
 - 将命令订阅加入 VSCode 扩展上下文。
 - 捕获命令执行异常并通过 VSCode 消息提示用户。
 
@@ -76,7 +77,7 @@ h3yun-cmax/
 12. 根据最新 `cmax.json` 重写“氚云代码”根目录的 `README.md`,按“应用 → 分组 → 表单”展示项目结构。
 13. 询问用户是否提交本次添加应用的构建文件;如果尚未初始化 Git,提交时由工具在后台自动初始化,不在弹窗中单独提示。
 
-构建命令如果发现当前工作区就是“氚云代码”目录,会从根 `cmax.json` 和 `.h3token` 预填根级共享的企业引擎编码与 Token。一个“氚云代码”工作区只使用一个根级企业引擎编码。Token 保持可编辑;Token 验证失败时构建表单不关闭,用户可替换 Token 后重试。`systemUserId` 仅在根配置首次缺失时查询,后续新增应用和同步直接复用根级值。
+构建命令如果发现当前工作区就是“氚云代码”目录,会从根 `cmax.json` 和 `.h3token` 预填根级共享的企业引擎编码与 Token。一个“氚云代码”工作区只使用一个根级企业引擎编码。Token 保持可编辑;Token 验证失败时构建表单不关闭,用户可替换 Token 后重试。`systemUserId` 仅在根 `cmax.json` 尚不存在（首次构建）时查询;已有根配置缺少该字段时不会自动补查，后续新增应用和同步直接复用根级值。
 
 构建命令是本插件最重要的入口之一。涉及文件夹创建、API 调用、代码写入、配置生成和 Git 初始化。
 
@@ -84,11 +85,11 @@ h3yun-cmax/
 
 主文件：`src/commands/syncProject.ts`
 
-“从氚云同步”与“从氚云分项同步”下的三个子项共用同一个处理器：子项对应的命令入口 `syncFormDesign`、`syncCode`、`syncAutomation` 只是分别以 `formDesign`、`code`、`automation` 调用 `handleSyncProject`，命令注册见 `src/extension.ts`。
+“从氚云同步”与“从氚云分项同步”下的四个子项共用同一个处理器：子项对应的命令入口 `syncFormDesign`、`syncCode`、`syncAutomation`、`syncBusinessRule` 只是分别以 `formDesign`、`code`、`automation`、`businessRule` 调用 `handleSyncProject`，命令注册见 `src/extension.ts`。
 
-`handleSyncProject(uri?, scope)` 的 `scope` 参数控制本次同步范围：`all`（默认，表单设计、代码与自动化）、`formDesign`（仅 `fields.md`）、`code`（仅 4 个前后端代码文件）、`automation`（仅 `automation.md`）。右键菜单“从氚云同步”传默认值，“从氚云分项同步”下的子项分别传 `formDesign`、`code`、`automation`；各范围共用同一套流程，只在拉取和写入文件时按范围过滤，范围外的本地文件不会被读取或覆盖。
+`handleSyncProject(uri?, scope)` 的 `scope` 参数控制本次同步范围：`all`（默认，表单设计、代码与自动化）、`formDesign`（仅 `fields.md`）、`code`（仅 4 个前后端代码文件）、`automation`（仅 `automation.md`）、`businessRule`（仅 `business-rule.md`）。右键菜单“从氚云同步”传默认值，“从氚云分项同步”下的子项分别传 `formDesign`、`code`、`automation`、`businessRule`；各范围共用同一套流程，只在拉取和写入文件时按范围过滤，范围外的本地文件不会被读取或覆盖。
 
-整体同步的自动化配置通过独立接口获取,直接覆盖各表单目录下的 `automation.md`,不参与代码文件冲突确认。同步流程不再按应用单独弹出 Git commit 信息或自动提交,因为整个“氚云代码”目录由系统统一管理 Git；只有“从氚云构建”继续保留构建提交确认。
+整体同步的自动化配置通过独立接口获取,直接覆盖各表单目录下的 `automation.md`,不参与代码文件冲突确认。业务规则仅老版本氚云支持,新版氚云已禁用,因此只存在于 `businessRule` 分项范围,`all` 范围不处理它。同步流程不再按应用单独弹出 Git commit 信息或自动提交,因为整个“氚云代码”目录由系统统一管理 Git；只有“从氚云构建”继续保留构建提交确认。
 
 `automation` 范围在主流程前置步骤之后、`getForms()` **之前**插入一个独立分支并直接返回。原因：
 
@@ -97,10 +98,12 @@ h3yun-cmax/
 
 改动这一部分时不要把 automation 分支移回 `getForms()` 之后，否则同步自动化会重新产生大量无谓的并发请求。
 
-范围还决定是否处理“应用下表单增减”（`handlesStructure = scope !== 'code' && scope !== 'automation'`）：
+`businessRule` 范围同样在 `getForms()` 之前插入独立分支并直接返回。业务规则接口 `/Console/FormulaEventHandler/OnAction` 按表单返回，请求参数只需要表单编码，因此该分支直接遍历 `cmax.json` 中当前应用的表单映射，为每个本地已同步表单请求一次，不拉取表单列表，也不发 LoadForm。请求按批发送：每批最多 10 个并发（`BUSINESS_RULE_REQUEST_BATCH_SIZE`），一批全部完成后才发下一批，避免表单较多的应用瞬间压垮接口。业务规则仅老版本氚云支持；新版氚云已禁用该功能，故不纳入构建与整体同步。单个表单请求失败不会中断本次同步：失败表单不写入 `business-rule.md`，其本地旧文件保持原样，并在结果提示中列出失败表单。Token 失效时重新输入后只重试失败的表单。
+
+范围还决定是否处理“应用下表单增减”（`handlesStructure = scope !== 'code' && scope !== 'automation' && scope !== 'businessRule'`）：
 
 - `all`、`formDesign`：按最新表单列表新建表单目录、重命名改名表单目录、清理已删除表单目录，并把最新表单列表写回 `cmax.json`。
-- `code`、`automation`：只处理本地已有表单目录。氚云侧新增的表单、以及 `cmax.json` 有记录但本地目录已不存在的表单都跳过并计入“跳过”数量；不重命名、不删除任何目录。
+- `code`、`automation`、`businessRule`：只处理本地已有表单目录。氚云侧新增的表单、以及 `cmax.json` 有记录但本地目录已不存在的表单都跳过并计入“跳过”数量；不重命名、不删除任何目录。
 
 `automation` 范围在该分支内拉取应用下全部自动化后，直接按表单写入 `automation.md`，不涉及字段表与代码的拉取和冲突检测。
 
@@ -110,16 +113,16 @@ h3yun-cmax/
 2. 检查“氚云代码”目录下是否存在根 `cmax.json`,并从应用目录后缀定位当前应用配置。
 3. 读取根 `cmax.json` 中的共享配置和当前应用配置,并根据根级 `h3yunApiVersion` 选择氚云接口版本。
 4. 根级 `engineCode` 缺失时提示用户补充并写回根 `cmax.json`;Token 缺失或失效时提示用户重新输入。
-5. 拉取氚云最新应用名和表单列表（`automation` 范围跳过表单列表）。表单列表来自一次 `children` 接口调用,按节点之间的 `parentCode` 关系还原菜单树,再按接口返回顺序深度优先展开,每条表单记录其 `groupPath`。
+5. 拉取氚云最新应用名和表单列表（`automation`、`businessRule` 范围跳过表单列表）。表单列表来自一次 `children` 接口调用,按节点之间的 `parentCode` 关系还原菜单树,再按接口返回顺序深度优先展开,每条表单记录其 `groupPath`。
 6. 同步应用文件夹名；处理结构的范围还会同步表单文件夹名。
-7. 整体同步先调用自动化接口确认远端自动化配置可用；自动化请求失败时在写入表单文件前终止本次同步，避免形成部分同步结果。分项 `automation` 仍在获取表单列表前单独调用该接口。
+7. 整体同步先调用自动化接口确认远端自动化配置可用；自动化请求失败时在写入表单文件前终止本次同步，避免形成部分同步结果。分项 `automation` 仍在获取表单列表前单独调用该接口。`businessRule` 不获取表单列表，直接按本地已有表单目录逐批请求业务规则。
 8. 按 `scope` 获取远端表单设计或代码（`getFormCodes`），不请求范围外的接口；返回值按固定键顺序构造。
 9. 检测本次范围内本地文件与远端文件是否存在差异。
 10. 出现冲突时提供批量处理或差异预览。
 11. 写入用户确认后的远端内容。
-12. 整体同步在远端没有表单时仍处理自动化配置，然后清理本地旧表单目录和其中的 `automation.md`；处理结构的其他范围会清理已删除表单目录，并更新根 `cmax.json` 中当前应用的同步时间和表单结构；`code` 范围只刷新同步时间，表单映射保持原样。
+12. 整体同步在远端没有表单时仍处理自动化配置，然后清理本地旧表单目录和其中的 `automation.md`；处理结构的其他范围会清理已删除表单目录，并更新根 `cmax.json` 中当前应用的同步时间和表单结构；`code`、`businessRule` 范围只刷新同步时间，表单映射保持原样。
 13. 保存节点获取失败报告。
-14. 根据最新 `cmax.json` 重写“氚云代码”根目录的 `README.md`。
+14. 根据最新 `cmax.json` 重写“氚云代码”根目录的 `README.md`；`automation`、`businessRule` 分支在获取表单列表前已返回，不会重写该文件。
 15. 同步完成后保留整个“氚云代码”目录的文件变更,不按应用弹出 commit 信息或自动提交,由系统统一执行 Git 管理。
 
 同步命令需要特别注意本地修改保护，不能无提示覆盖用户本地编辑。
@@ -135,8 +138,7 @@ h3yun-cmax/
 - 创建应用文件夹和表单文件夹。
 - 保存表单代码文件。
 - 创建和读取“氚云代码”目录下的统一 `cmax.json`。
-- 保存和读取 `.h3token`。
-- 在“氚云代码”目录保存和读取统一 `.h3token`。
+- 保存和读取“氚云代码”目录下统一的 `.h3token`。
 - 在“氚云代码”目录创建或更新 `.gitignore`。
 - 在“氚云代码”根目录保存 `failed-nodes(应用名称).md` 失败报告。
 - 使用既有后缀重命名应用和表单文件夹。
@@ -147,9 +149,9 @@ h3yun-cmax/
 const CMAX_CONFIG_FILENAME = 'cmax.json';
 const H3_TOKEN_FILENAME = '.h3token';
 const GITIGNORE_FILENAME = '.gitignore';
-const FAILED_NODES_REPORT_FILENAME = 'failed-nodes.md';
 const GITIGNORE_ENTRIES = [
   H3_TOKEN_FILENAME,
+  'failed-nodes*.md',
   '.opencode/',
   '.lingma/',
   '.cursor/',
@@ -190,7 +192,7 @@ const GITIGNORE_ENTRIES = [
 使用规则:
 
 - 新建工作区时默认写入 `"h3yunApiVersion": "new"`。
-- 已有根级配置时,新增应用和同步均保留当前配置值,不会覆盖用户手动改成的 `new`。
+- 已有根级配置时,新增应用和同步均保留当前配置值,不会覆盖用户手动修改的值（包括 `legacy`）。
 - 旧版 `cmax.json` 若缺少 `h3yunApiVersion` 字段,按默认值 `new` 处理,并在下次写回时补全。
 - 旧项目需要使用新版工具重新构建项目结构,不会读取旧应用目录中的配置。
 
@@ -238,6 +240,7 @@ src/services/h3yunApi.ts
 - 获取列表设计器代码。
 - 按同步范围获取内容: `getFormCodes(formCode, scope)` 只请求范围内需要的接口,`getFormAllCodes()` 等价于 `scope = 'all'`。
 - 获取应用下全部自动化: `getAutomations(appCode, fieldLabelIndex)` 调用 `/Automatic/OnAction` 的 `LoadTriggersByAppCode`,一次取回该应用下所有表单的自动化。
+- 获取单个表单的业务规则: `getBusinessRules(formCode)` 调用 `/Console/FormulaEventHandler/OnAction` 的 `LoadFormulaEventHandlers`,由 `businessRuleParser` 解析为 `BusinessRule[]`。
 - 在远端代码为空时使用 `default-code/` 中的默认模板。
 - 记录部分节点请求失败信息，供构建或同步后生成报告。
 
@@ -247,7 +250,7 @@ src/services/h3yunApi.ts
 
 氚云新版本接口服务。
 
-当前该文件先继承 `H3YunLegacyApiService`,保持行为一致。后续确认新版本接口差异后,只需要在 `H3YunNewApiService` 中覆盖对应方法,不要把新版本判断散落到命令层或 parser 外层。
+当前该文件继承 `H3YunLegacyApiService`，但已覆盖列表设计器代码的读取：列表前端和列表后端代码改走新版接口 `/v1/view/designer/load`。其余能力（表单结构、表单前后端代码等）仍复用老版本实现。后续确认更多新版本接口差异时，只需要在 `H3YunNewApiService` 中覆盖对应方法，不要把新版本判断散落到命令层或 parser 外层。
 
 ### `src/services/automationReport.ts`
 
@@ -256,13 +259,46 @@ src/services/h3yunApi.ts
 主要职责：
 
 - 一个表单生成一份 `automation.md`，该表单下的多个自动化都写在同一个文件里，避免表单目录下文件过多。
-- 文件头输出表单名称、编码、自动化数量、同步时间和阅读约定。
+- 文件头输出表单名称、编码、自动化数量；有自动化时再输出阅读约定。
 - 每个自动化输出名称、启用状态、触发事件与说明、重复周期（定时触发）、变更字段（更新触发）、触发条件。
 - 执行动作按设计器语义呈现：先给一句摘要（如“在【X】中查找符合条件的数据并更新”），再列具体配置。
 - 分开输出“主表筛选条件 / 子表筛选条件”和“更新时赋值 / 新增时赋值”，与设计器的两个独立区域对应。
 - 标注动作间的“节点数据”引用，如“第 1 步「查找数据」的结果”，还原自动化的数据流。
 - 子表动作以 `1.1`、`1.2` 的编号挂在父动作下，体现父子关系。
-- 没有自动化的表单也会生成一份“该表单当前没有配置自动化”的说明，避免残留旧内容。
+- 没有自动化的表单也会生成文件，内容只有“无”，避免残留旧内容。
+
+### `src/services/automationSync.ts`
+
+`automation.md` 写入器。
+
+主要职责：
+
+- 按表单编码从 `cmax.json` 找到对应后缀，再按后缀定位真实表单目录，避免表单改名后写错位置。
+- 自动化配置直接覆盖写入，不参与代码冲突确认。
+- 没有自动化的本地表单写入内容为“无”的文件，避免残留已删除的自动化。
+- 接口未返回自动化记录、但本地仍存在的表单也会被清理为“无”。
+
+### `src/services/businessRuleReport.ts`
+
+`business-rule.md` 生成器，负责把解析后的业务规则渲染成便于人工和 AI 阅读的 Markdown。
+
+主要职责：
+
+- 一个表单生成一份 `business-rule.md`，该表单的全部业务规则都写在同一个文件里。
+- 文件头输出表单名称、编码、规则数量和阅读约定，不输出同步时间。
+- 每条规则分别输出“数据生效时”和“数据作废时”的执行代码与设计器可读文本，并给出规则编号、规则状态（生成文件中显示为“已启用 / 已停用”）和备注；已停用的规则会额外标注不会执行。
+- 代码使用 Markdown 代码块；代码中若包含三个连续反引号，会自动改用四个反引号作为围栏。
+- 没有业务规则的表单也会生成文件，内容只有“无”。
+
+### `src/services/businessRuleSync.ts`
+
+`business-rule.md` 写入器。
+
+主要职责：
+
+- 按表单编码从 `cmax.json` 找到对应后缀，再按后缀定位真实表单目录，避免表单改名后写错位置。
+- 只为本次成功获取到规则的表单写文件；请求失败的表单不出现在结果映射中，其本地旧文件保持不变。
+- 没有规则的本地表单写入内容为“无”的文件，避免残留旧内容。
 
 ### `src/services/fieldLabelService.ts`
 
@@ -299,7 +335,7 @@ Git 操作服务，当前封装了初始化和提交逻辑。
 - 执行 `git commit -m <message>`。
 - 捕获 Git 命令错误并返回可读错误信息。
 
-当前实现使用 `execFile`，避免拼接 shell 命令带来的转义问题。由于根 `cmax.json` 由所有应用共享,同步某个应用时会同时暂存根配置文件,但不会暂存其他应用目录的代码。
+当前实现使用 `execFile`，避免拼接 shell 命令带来的转义问题。只有“从氚云构建项目”会执行 Git 提交：提交时按应用目录范围执行 `git add`，并同步纳入根 `cmax.json`、`README.md` 和 `.gitignore`，不会暂存其他应用目录的代码。同步流程不执行任何 Git 操作。
 
 ### `src/ui/buildProjectForm.ts`
 
@@ -393,7 +429,8 @@ HTTP 请求工具。
 - `CmaxWorkspaceConfig`：根 `cmax.json` 的统一工作区配置结构。
 - `CmaxFormEntry`：表单配置条目,包含表单编码、名称和可选的分组路径 `groupPath`。
 - `FileContentMap`：一个表单下各代码文件的内容映射。
-- `SyncScope`：同步范围,取值为 `all`、`formDesign`、`code`、`automation`,用于分项同步时限定拉取与写入的文件。
+- `SyncScope`：同步范围,取值为 `all`、`formDesign`、`code`、`automation`、`businessRule`,用于分项同步时限定拉取与写入的文件。
+- `BusinessRule`、`FormBusinessRules`：业务规则的解析结果结构,字段含义见各类型注释。
 - `Automation`、`AutomationAction`、`AutomationCondition`、`AutomationFieldMapping`、`FormAutomations`：自动化配置的解析结果结构,字段含义见各类型注释。
 
 ### `src/parsers/`
@@ -409,12 +446,13 @@ HTTP 请求工具。
 - `customCodeParser.ts`：解析表单自定义代码响应。
 - `listViewDesignerParser.ts`：解析列表设计器代码响应。
 - `automationParser.ts`：解析自动化列表响应，把触发类型、条件、执行动作翻译成可读结构，并解析字段赋值与消息内容中的字段占位符。
+- `businessRuleParser.ts`：解析业务规则响应，把 `FormulaEventHandlers` 转换为 `BusinessRule[]`，空值与缺失字段统一归一。
 
 ### `default-code/`
 
 默认代码模板目录。
 
-当氚云远端某类代码为空时，`h3yunApi.ts` 会读取这里的模板作为本地生成文件内容。
+当氚云远端某类代码为空时，`h3yunApiLegacy.ts` 会读取这里的模板作为本地生成文件内容（新版服务继承该实现）。
 
 文件说明：
 
@@ -443,14 +481,16 @@ HTTP 请求工具。
 │   │   ├── form-backend.cs
 │   │   ├── list-frontend.js
 │   │   ├── list-backend.cs
-│   │   └── automation.md
+│   │   ├── automation.md
+│   │   └── business-rule.md
 │   └── 表单B(f4d5e6f)/
 │       ├── fields.md
 │       ├── form-frontend.js
 │       ├── form-backend.cs
 │       ├── list-frontend.js
 │       ├── list-backend.cs
-│       └── automation.md
+│       ├── automation.md
+│       └── business-rule.md
 └── 其他应用/
 ```
 
@@ -463,6 +503,7 @@ HTTP 请求工具。
 - 表单条目可带 `groupPath` 数组,记录该表单在氚云应用菜单中的分组路径;没有该字段表示表单直接位于应用顶层。`forms` 中条目的书写顺序即氚云应用菜单顺序。
 - 本地目录只保留“应用 → 表单”两层,氚云分组不生成目录;根目录 `README.md` 负责呈现完整的三级结构。
 - `automation.md` 可由构建、整体同步或同步自动化生成,一个表单的多个自动化记录在同一个文件里,不按自动化数量拆分文件。
+- `business-rule.md` 只由“同步业务规则”生成,一个表单的全部业务规则记录在同一个文件里。业务规则仅老版本氚云支持,新版氚云已禁用,因此构建和整体同步不会生成该文件。
 - 根目录 `README.md` 由 `projectReadme.ts` 自动生成,构建或同步后重写;构建时随本次构建文件提交,同步时保留为待系统统一管理的文件变更。
 - “氚云代码”目录下的 `.h3token` 保存本地 Token，不应提交到 Git。
 - “氚云代码”目录下的 `.gitignore` 由插件自动创建或更新。
@@ -517,6 +558,50 @@ ReturnData.Triggers[]           每个元素是一个表单
 - `RequestMapping.SortBys`、`Limit`、`IgnoreOverLimit`：查找结果的排序、数量上限，以及超限时是取前 N 条继续还是停止。
 - 消息通知的 `Title`、`Content`、`Receivers` 中会内嵌 `{表单编码@1.字段编码}` 占位符，需要替换成字段名称才可读。
 - 子动作在 `Action[].ChildrenTriggerAction`，与父动作结构相同，需要递归解析。
+
+## 业务规则的接口与数据结构
+
+业务规则同步使用氚云设计器接口（仅老版本氚云支持，新版氚云已禁用）：
+
+```text
+POST /Console/FormulaEventHandler/OnAction
+Content-Type: application/x-www-form-urlencoded
+Headers: EngineCode: <企业引擎编码>, SchemaCode: <表单编码>
+Body: PostData={"ActionName":"LoadFormulaEventHandlers","SchemaCode":"<表单编码>"}
+```
+
+该接口按表单返回，单个表单一次请求：
+
+```text
+ReturnData.
+  ├── IsSuccess
+  └── FormulaEventHandlers[]
+        ├── RuleNo          规则编号，可能重复，不代表执行顺序
+        ├── SubmitCode      数据生效时执行的代码
+        ├── SubmitText      数据生效时的可读文本（可能为 null）
+        ├── RollbackCode    数据作废时执行的代码（可为空）
+        ├── RollbackText    数据作废时的可读文本（可能为 null）
+        ├── Description     用户填写的规则备注
+        └── RuleStatus      规则状态：0 已启用，3 已停用（生成文件时转换为文字）
+```
+
+- `SubmitCode` / `RollbackCode` 使用 `{表单编码.字段编码}` 引用表单和字段；`SubmitText` / `RollbackText` 使用名称，二者可互相对照。
+- 数据生效时按规则列表从上到下执行；数据作废时从下到上执行；编辑并重新提交数据时，先执行数据作废（从下到上），再执行数据生效（从上到下）。
+- 接口中的 `RuleNo` 可能重复（同一表单出现多个相同编号），不能作为执行顺序或唯一键；渲染时以数组顺序编号为“第 N 条”。
+- 单个表单请求失败时同步不会中断；该表单不写入 `business-rule.md`，本地旧文件保留，并在结果提示中列出失败表单。
+
+业务规则支持的高级函数（与设计器「函数列表 → 高级函数」一致）：
+
+| 函数 | 说明 |
+| --- | --- |
+| `INSERT` | 向目标表单新增数据 |
+| `UPDATE` | 更新目标表单中符合条件的数据 |
+| `UPSERT` | 先查找目标表单数据，存在则更新，不存在则新增 |
+| `DELETE` | 删除目标表单中符合条件的数据 |
+| `ADDFILE` | 向目标表单附件控件添加文件（`TRUE` 覆盖写入，`FALSE` 追加写入）；目标表单只能是当前表单中关联表单控件对应的表单 |
+| `REMOVEFILE` | 移除目标表单附件控件中与当前表单指定附件相同的文件；目标表单只能是当前表单中关联表单控件对应的表单 |
+
+生成 `business-rule.md` 时会在文件头输出上述函数说明。
 
 ## 打包与发布
 

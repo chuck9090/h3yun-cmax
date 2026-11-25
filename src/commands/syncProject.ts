@@ -3,12 +3,13 @@ import * as path from 'path';
 import { h3yunApi } from '../services/h3yunApi';
 import { fileService } from '../services/fileService';
 import { saveProjectReadme } from '../services/projectReadme';
-import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap, SyncScope } from '../types';
+import { CmaxConfig, CmaxFormEntry, CmaxWorkspaceConfig, FileContentMap, SyncScope, BusinessRule } from '../types';
 import { collectAllFieldLabels } from '../services/fieldLabelService';
 import { writeAutomationFiles } from '../services/automationSync';
+import { writeBusinessRuleFiles } from '../services/businessRuleSync';
 import { buildFolderName, CODE_FOLDER_NAME, listSubfolders } from '../utils/folderUtils';
 import { mapWithConcurrency } from '../utils/promiseUtils';
-import { FORM_REQUEST_CONCURRENCY } from '../constants/concurrency';
+import { FORM_REQUEST_CONCURRENCY, BUSINESS_RULE_REQUEST_BATCH_SIZE } from '../constants/concurrency';
 import { hasFileConflict, generateDiffReport } from '../utils/diffUtils';
 import { showDiffPreview } from '../ui/diffPreview';
 import { showBuildProjectForm } from '../ui/buildProjectForm';
@@ -83,6 +84,141 @@ async function ensureEngineCode(workspaceConfig: CmaxWorkspaceConfig, codeFolder
 }
 
 type AutomationFetchResult = Awaited<ReturnType<typeof h3yunApi.getAutomations>>;
+
+interface FormRef {
+  formCode: string;
+  formName: string;
+}
+
+interface BusinessRuleFetchResult {
+  rulesByFormCode: Map<string, BusinessRule[]>;
+  failures: Array<{ formCode: string; formName: string; error: string }>;
+}
+
+/**
+ * 判断错误信息是否表示 Token 失效。
+ * 除 401 外,氚云还可能返回“未登录 / 登录已过期 / 会话超时 / 授权失败”等文案。
+ */
+function isTokenErrorMessage(message: string): boolean {
+  return /401|认证|授权|未登录|登录|过期|token/i.test(message);
+}
+
+/**
+ * 从 cmax.json 中筛选出本地已有表单目录的表单。
+ * 业务规则按表单逐个请求,只为真实存在的目录发请求,避免目录缺失时产生无谓的接口调用;
+ * 目录是否存在按后缀判断,不依赖可能已变更的目录名称。
+ */
+function toLocalFormRefs(
+  appFolderPath: string,
+  forms: Record<string, CmaxFormEntry>
+): FormRef[] {
+  const existingSuffixes = new Set<string>();
+  for (const folderName of listSubfolders(appFolderPath)) {
+    const suffixMatch = folderName.match(/\((f[0-9a-z]{5,32})\)$/);
+    if (suffixMatch) {
+      existingSuffixes.add(suffixMatch[1]);
+    }
+  }
+
+  return Object.entries(forms)
+    .filter(([suffix]) => existingSuffixes.has(suffix))
+    .map(([, entry]) => ({
+      formCode: entry.formCode,
+      formName: entry.formName
+    }));
+}
+
+/**
+ * 逐个表单获取业务规则。
+ * 业务规则接口按表单返回,单个表单失败不影响其它表单:失败表单不返回规则,
+ * 写入阶段会跳过它并保留本地旧文件。
+ *
+ * 请求按批发送:每批最多 `BUSINESS_RULE_REQUEST_BATCH_SIZE`(10) 个,
+ * 一批全部完成后才发下一批,保证同时进行的请求数不超过 10。
+ */
+async function fetchBusinessRules(
+  forms: FormRef[],
+  onProgress?: (done: number, total: number) => void
+): Promise<BusinessRuleFetchResult> {
+  const rulesByFormCode = new Map<string, BusinessRule[]>();
+  const failures: BusinessRuleFetchResult['failures'] = [];
+  let processedCount = 0;
+  // 硬性约束:即使常量被调大,单批同时发出的请求也不超过 10 个。
+  const batchSize = Math.max(1, Math.min(BUSINESS_RULE_REQUEST_BATCH_SIZE, 10));
+
+  for (let start = 0; start < forms.length; start += batchSize) {
+    const batch = forms.slice(start, start + batchSize);
+
+    await Promise.all(batch.map(async (form) => {
+      try {
+        const rules = await h3yunApi.getBusinessRules(form.formCode);
+        rulesByFormCode.set(form.formCode, rules);
+      } catch (error) {
+        failures.push({
+          formCode: form.formCode,
+          formName: form.formName,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }));
+
+    processedCount += batch.length;
+    onProgress?.(processedCount, forms.length);
+  }
+
+  return { rulesByFormCode, failures };
+}
+
+/**
+ * 获取业务规则,Token 失效时重新输入后只重试失败的表单。
+ */
+async function fetchBusinessRulesWithTokenRetry(
+  config: CmaxConfig,
+  workspaceConfig: CmaxWorkspaceConfig,
+  engineCode: string,
+  codeFolderPath: string,
+  forms: FormRef[],
+  reportProgress: (message: string, increment?: number) => void
+): Promise<BusinessRuleFetchResult> {
+  const result = await fetchBusinessRules(forms, (done, total) => {
+    reportProgress(`正在获取业务规则 ${done}/${total}...`);
+  });
+  const tokenFailures = result.failures.filter((failure) => isTokenErrorMessage(failure.error));
+
+  if (tokenFailures.length === 0) {
+    return result;
+  }
+
+  const newToken = await promptForTokenWithProjectInfo(
+    config,
+    workspaceConfig,
+    'Token 已失效,请重新输入 h3_token 后继续同步业务规则'
+  );
+  if (!newToken) {
+    throw new Error('已取消同步');
+  }
+
+  h3yunApi.setToken(newToken, engineCode);
+  fileService.saveToken(codeFolderPath, newToken);
+  fileService.ensureGitIgnore(codeFolderPath);
+  reportProgress('正在使用新 Token 重新获取业务规则...', 10);
+
+  const retryFormCodes = new Set(tokenFailures.map((failure) => failure.formCode));
+  const retried = await fetchBusinessRules(
+    forms.filter((form) => retryFormCodes.has(form.formCode)),
+    (done, total) => reportProgress(`正在重新获取业务规则 ${done}/${total}...`)
+  );
+
+  for (const [formCode, rules] of retried.rulesByFormCode) {
+    result.rulesByFormCode.set(formCode, rules);
+  }
+  result.failures = [
+    ...result.failures.filter((failure) => !retryFormCodes.has(failure.formCode)),
+    ...retried.failures
+  ];
+
+  return result;
+}
 
 /**
  * 获取应用自动化配置,Token 失效时重新输入后重试。
@@ -253,7 +389,8 @@ const SYNC_SCOPE_LABELS: Record<SyncScope, string> = {
   all: '表单设计、代码与自动化',
   formDesign: '表单设计',
   code: '代码',
-  automation: '自动化'
+  automation: '自动化',
+  businessRule: '业务规则'
 };
 
 /**
@@ -379,8 +516,8 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
   const fetchLabel = scope === 'formDesign' ? '表单设计' : '表单代码';
   // 只有整体同步和“同步表单设计”按氚云最新表单列表处理应用下表单的增减:
   // 新增表单建目录、重命名变更名称的表单、清理已删除的表单。
-  // “同步代码”“同步自动化”只处理本地已有表单目录,不新增、不重命名、不删除任何表单目录。
-  const handlesStructure = scope !== 'code' && scope !== 'automation';
+  // “同步代码”“同步自动化”“同步业务规则”只处理本地已有表单目录,不新增、不重命名、不删除任何表单目录。
+  const handlesStructure = scope !== 'code' && scope !== 'automation' && scope !== 'businessRule';
   const progressTitle = scope === 'all'
     ? `正在同步应用: ${config.appName}`
     : `正在同步${scopeLabel}: ${config.appName}`;
@@ -421,6 +558,52 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
              : '';
            const summary = `自动化同步完成! 表单: ${automationSummary.writtenCount}, 自动化: ${automationSummary.automationCount}, 无自动化表单: ${automationSummary.emptyCount}${skippedSummary}`;
            vscode.window.showInformationMessage(summary);
+          return;
+        }
+
+        // 业务规则是老版本氚云的功能(新版已禁用),因此只在“从氚云分项同步”中提供,
+        // 不纳入“从氚云构建”和“从氚云同步”。与同步自动化一样放在 getForms 之前:
+        // 写 business-rule.md 只需要 config.forms 中的表单编码,不需要表单列表与 LoadForm。
+        if (scope === 'businessRule') {
+          const targets = toLocalFormRefs(appFolderPath, config.forms);
+          if (targets.length === 0) {
+            fileService.updateLastSyncTime(codeFolderPath, appSuffix);
+            vscode.window.showInformationMessage('该应用下没有已同步到本地的表单，无需同步业务规则。');
+            return;
+          }
+
+          progress.report({ message: '正在获取业务规则...', increment: 20 });
+          const result = await fetchBusinessRulesWithTokenRetry(
+            config,
+            workspaceConfig,
+            engineCode,
+            codeFolderPath,
+            targets,
+            (message, increment) => progress.report({ message, increment })
+          );
+
+          progress.report({ message: '正在写入 business-rule.md...', increment: 60 });
+          const summary = writeBusinessRuleFiles(appFolderPath, config.forms, result.rulesByFormCode);
+
+          progress.report({ message: '完成!', increment: 100 });
+          fileService.updateLastSyncTime(codeFolderPath, appSuffix);
+
+          const skippedSummary = summary.skippedCount > 0
+            ? `, 跳过本地未同步的表单: ${summary.skippedCount}`
+            : '';
+          const failedSummary = result.failures.length > 0
+            ? `, 失败: ${result.failures.length}`
+            : '';
+          const message = `业务规则同步完成! 表单: ${summary.writtenCount}, 规则: ${summary.ruleCount}, 无规则表单: ${summary.emptyCount}${skippedSummary}${failedSummary}`;
+
+          if (result.failures.length > 0) {
+            const failureNames = result.failures.map((failure) => failure.formName).join('、');
+            vscode.window.showWarningMessage(
+              `${message}\n\n以下表单的业务规则获取失败，本地 business-rule.md 保持原样: ${failureNames}`
+            );
+          } else {
+            vscode.window.showInformationMessage(message);
+          }
           return;
         }
 
