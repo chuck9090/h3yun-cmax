@@ -33,6 +33,10 @@ class H3YunApiFacade {
     return this.service.consumeLoadFormFailures();
   }
 
+  consumeCodeFailures(): Array<{ formCode: string; formName?: string; part: 'form' | 'list'; error: string }> {
+    return this.service.consumeCodeFailures();
+  }
+
   getApplication(appCode: string) {
     return this.service.getApplication(appCode);
   }
@@ -41,8 +45,8 @@ class H3YunApiFacade {
     return this.service.getForms(appCode, knownFormCodes);
   }
 
-  getFormFields(formCode: string) {
-    return this.service.getFormFields(formCode);
+  getFormFields(formCode: string, formName?: string) {
+    return this.service.getFormFields(formCode, formName);
   }
 
   getFormFrontendCode(formCode: string) {
@@ -61,12 +65,12 @@ class H3YunApiFacade {
     return this.service.getListBackendCode(formCode);
   }
 
-  getFormAllCodes(formCode: string) {
-    return this.service.getFormAllCodes(formCode);
+  getFormAllCodes(formCode: string, formName?: string) {
+    return this.service.getFormAllCodes(formCode, formName);
   }
 
-  getFormCodes(formCode: string, scope: SyncScope = 'all') {
-    return this.service.getFormCodes(formCode, scope);
+  getFormCodes(formCode: string, scope: SyncScope = 'all', formName?: string) {
+    return this.service.getFormCodes(formCode, scope, formName);
   }
 
   getAutomations(appCode: string, fieldLabelMap?: FieldLabelIndex) {

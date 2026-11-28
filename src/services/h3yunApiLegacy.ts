@@ -53,6 +53,18 @@ const loadFormCache = new Map<string, SheetDesignerLoadFormResponse>();
 const customCodeCache = new Map<string, FormCustomCode>();
 const listViewCodeCache = new Map<string, ListViewCode>();
 const loadFormFailures: Array<{ code: string; name: string; error: string }> = [];
+const codeFailures: Array<{ formCode: string; formName?: string; part: 'form' | 'list'; error: string }> = [];
+
+/**
+ * 表单结构接口错误。
+ * 与“接口成功但没有表单结构（可能是报表）”区分，供 getForms 决定是否记录失败。
+ */
+export class H3YunLoadFormError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'H3YunLoadFormError';
+  }
+}
 
 function isReportNode(node: H3FunctionNode): boolean {
   return /报表/.test(node.displayName);
@@ -98,6 +110,7 @@ export function setToken(token: string, engineCode: string): void {
   customCodeCache.clear();
   listViewCodeCache.clear();
   loadFormFailures.length = 0;
+  codeFailures.length = 0;
 }
 
 /**
@@ -156,6 +169,7 @@ export class H3YunLegacyApiService {
     customCodeCache.clear();
     listViewCodeCache.clear();
     loadFormFailures.length = 0;
+    codeFailures.length = 0;
   }
 
   /**
@@ -165,6 +179,7 @@ export class H3YunLegacyApiService {
     loadFormCache.clear();
     customCodeCache.clear();
     listViewCodeCache.clear();
+    codeFailures.length = 0;
   }
 
   /**
@@ -173,6 +188,16 @@ export class H3YunLegacyApiService {
   consumeLoadFormFailures(): Array<{ code: string; name: string; error: string }> {
     const failures = [...loadFormFailures];
     loadFormFailures.length = 0;
+    return failures;
+  }
+
+  /**
+   * 获取并清空代码请求失败记录。
+   * 代码接口失败时不写入默认模板，调用方据此保留本地旧文件并提示用户。
+   */
+  consumeCodeFailures(): Array<{ formCode: string; formName?: string; part: 'form' | 'list'; error: string }> {
+    const failures = [...codeFailures];
+    codeFailures.length = 0;
     return failures;
   }
 
@@ -209,8 +234,12 @@ export class H3YunLegacyApiService {
           } catch (error) {
             // 已知表单(编码已记录在 cmax.json)的 LoadForm 失败必须记入失败并中断同步,
             // 氚云不存在表单转报表逻辑,失败说明本次没有同步到,不能当作已删除。
+            // 接口层错误（HTTP、返回体为空、successful=false）统一抛 H3YunLoadFormError，
+            // 未知表单也要记录，避免新版接口异常时静默少表单。
             const isKnownForm = knownFormCodes?.has(node.code) ?? false;
-            if (isKnownForm || (!knownFormCodes && !isReportNode(node))) {
+            const isApiError = error instanceof H3YunLoadFormError;
+            // 报表等非表单节点继续按原逻辑跳过；接口错误只在非报表节点或已知表单上记录。
+            if (isKnownForm || (!isReportNode(node) && (isApiError || !knownFormCodes))) {
               loadFormFailures.push({
                 code: node.code,
                 name: node.displayName,
@@ -343,16 +372,19 @@ export class H3YunLegacyApiService {
    * @param formCode 表单编码
    * @returns 字段表文本
    */
-  async getFormFields(formCode: string): Promise<string> {
+  async getFormFields(formCode: string, formName?: string): Promise<string> {
     try {
       const apiResponse = await this.loadFormDesign(formCode);
-      return parseSchemaJSON(apiResponse, formCode);
+      return parseSchemaJSON(apiResponse, formCode, formName);
     } catch (error) {
+      if (error instanceof H3YunLoadFormError) {
+        throw error;
+      }
       throw new Error(`获取表单字段失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  private async loadFormDesign(formCode: string): Promise<SheetDesignerLoadFormResponse> {
+  protected async loadFormDesign(formCode: string): Promise<SheetDesignerLoadFormResponse> {
     const cachedResponse = loadFormCache.get(formCode);
 
     if (cachedResponse) {
@@ -372,10 +404,25 @@ export class H3YunLegacyApiService {
     const body = `PostData=${encodeURIComponent(postData)}`;
     const response = await post(url, body, headers);
 
-    ensureSuccessfulStatus(response.statusCode, '获取表单字段');
-    const apiResponse = parseJsonResponse<SheetDesignerLoadFormResponse>(response);
-    loadFormCache.set(formCode, apiResponse);
+    let apiResponse: SheetDesignerLoadFormResponse;
+    try {
+      ensureSuccessfulStatus(response.statusCode, '获取表单字段');
+      apiResponse = parseJsonResponse<SheetDesignerLoadFormResponse>(response);
+    } catch (error) {
+      throw new H3YunLoadFormError(error instanceof Error ? error.message : String(error));
+    }
 
+    const errorMessage = apiResponse.ErrorMessage
+      || (apiResponse as { errorMessage?: string | null }).errorMessage
+      || '接口返回失败';
+    if (apiResponse.Successful === false || apiResponse.successful === false) {
+      throw new H3YunLoadFormError(errorMessage);
+    }
+    if (!apiResponse.ReturnData && !apiResponse.returnData) {
+      throw new H3YunLoadFormError('表单设计接口返回数据为空');
+    }
+
+    loadFormCache.set(formCode, apiResponse);
     return apiResponse;
   }
 
@@ -424,7 +471,7 @@ export class H3YunLegacyApiService {
     }
   }
 
-  private async loadCustomCode(formCode: string): Promise<FormCustomCode> {
+  protected async loadCustomCode(formCode: string): Promise<FormCustomCode> {
     const cachedCode = customCodeCache.get(formCode);
 
     if (cachedCode) {
@@ -536,28 +583,30 @@ export class H3YunLegacyApiService {
   /**
    * 按指定范围获取表单的设计与代码内容。
    * 只请求范围内需要的接口,避免“仅同步表单设计”时额外拉取代码。
-   * 范围内各请求并行发出,与整体同步的性能一致。
+   * 表单代码、列表代码各请求一次,避免前后端并行调用导致同一接口重复请求。
    * 返回值按 FileContentMap 的固定键顺序构造,保证冲突预览和写入顺序稳定。
    * @param formCode 表单编码
    * @param scope 同步范围
+   * @param formName 表单名称,用于 fields.md 标题兜底
    * @returns 本次范围内需要写入的文件内容映射
    */
-  async getFormCodes(formCode: string, scope: SyncScope = 'all'): Promise<Partial<FileContentMap>> {
-    // 两个任务在 await 之前就已经发起,保证范围内请求仍然是并行的。
+  async getFormCodes(
+    formCode: string,
+    scope: SyncScope = 'all',
+    formName?: string
+  ): Promise<Partial<FileContentMap>> {
     const fieldsTask = (scope === 'formDesign' || scope === 'all')
-      ? this.getFormFields(formCode)
+      ? this.getFormFields(formCode, formName)
       : Promise.resolve(undefined);
 
     const codeTask = (scope === 'code' || scope === 'all')
       ? Promise.all([
-        this.getFormFrontendCode(formCode),
-        this.getFormBackendCode(formCode),
-        this.getListFrontendCode(formCode),
-        this.getListBackendCode(formCode)
+        this.loadCustomCodeSafely(formCode, formName),
+        this.loadListViewCodeSafely(formCode, formName)
       ])
       : Promise.resolve(undefined);
 
-    const [fields, codeContents] = await Promise.all([fieldsTask, codeTask]);
+    const [fields, codeResults] = await Promise.all([fieldsTask, codeTask]);
 
     // 按固定顺序输出,范围外的键不写入,由调用方跳过。
     const codes: Partial<FileContentMap> = {};
@@ -566,15 +615,22 @@ export class H3YunLegacyApiService {
       codes['fields.md'] = fields;
     }
 
-    if (codeContents) {
-      const [formFrontend, formBackend, listFrontend, listBackend] = codeContents;
-      codes['form-frontend.js'] = useDefaultCodeIfEmpty('form-frontend.js', formFrontend, formCode);
-      codes['form-backend.cs'] = useDefaultCodeIfEmpty('form-backend.cs', formBackend, formCode);
-      codes['list-frontend.js'] = useDefaultCodeIfEmpty('list-frontend.js', listFrontend, formCode);
-      codes['list-backend.cs'] = useDefaultCodeIfEmpty('list-backend.cs', listBackend, formCode);
+    if (codeResults) {
+      const [customCode, listViewCode] = codeResults;
+      if (customCode) {
+        codes['form-frontend.js'] = useDefaultCodeIfEmpty('form-frontend.js', customCode.formFrontendCode, formCode);
+        codes['form-backend.cs'] = useDefaultCodeIfEmpty('form-backend.cs', customCode.formBackendCode, formCode);
+      }
+      if (listViewCode) {
+        codes['list-frontend.js'] = useDefaultCodeIfEmpty('list-frontend.js', listViewCode.listFrontendCode, formCode);
+        codes['list-backend.cs'] = useDefaultCodeIfEmpty('list-backend.cs', listViewCode.listBackendCode, formCode);
+      }
     }
 
     if (Object.keys(codes).length === 0) {
+      if (scope === 'code' || scope === 'all') {
+        throw new Error('获取表单代码失败: 表单代码和列表代码均未返回');
+      }
       throw new Error(`未知的同步范围: ${scope}`);
     }
 
@@ -582,12 +638,40 @@ export class H3YunLegacyApiService {
   }
 
   /**
+   * 拉取表单前后端代码；失败时记录并返回 undefined，不写默认模板。
+   */
+  private async loadCustomCodeSafely(formCode: string, formName?: string): Promise<FormCustomCode | undefined> {
+    try {
+      return await this.loadCustomCode(formCode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`获取表单 "${formName || formCode}" 表单代码失败: ${message}`);
+      codeFailures.push({ formCode, formName, part: 'form', error: message });
+      return undefined;
+    }
+  }
+
+  /**
+   * 拉取列表前后端代码；失败时记录并返回 undefined，不写默认模板。
+   */
+  private async loadListViewCodeSafely(formCode: string, formName?: string): Promise<ListViewCode | undefined> {
+    try {
+      return await this.loadListViewCode(formCode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`获取表单 "${formName || formCode}" 列表代码失败: ${message}`);
+      codeFailures.push({ formCode, formName, part: 'list', error: message });
+      return undefined;
+    }
+  }
+
+  /**
    * 获取表单的所有代码内容
    * @param formCode 表单编码
    * @returns 所有代码内容的映射
    */
-  async getFormAllCodes(formCode: string): Promise<FileContentMap> {
-    const codes = await this.getFormCodes(formCode, 'all');
+  async getFormAllCodes(formCode: string, formName?: string): Promise<FileContentMap> {
+    const codes = await this.getFormCodes(formCode, 'all', formName);
 
     // 只校验键是否补齐,允许内容为空字符串(远端确实可能没有代码)。
     if (codes['fields.md'] === undefined
@@ -595,7 +679,11 @@ export class H3YunLegacyApiService {
       || codes['form-backend.cs'] === undefined
       || codes['list-frontend.js'] === undefined
       || codes['list-backend.cs'] === undefined) {
-      throw new Error(`获取表单 ${formCode} 的完整代码失败`);
+      const failures = codeFailures.filter((failure) => failure.formCode === formCode);
+      const detail = failures.length > 0
+        ? `: ${failures.map((failure) => `${failure.part === 'form' ? '表单代码' : '列表代码'} - ${failure.error}`).join('；')}`
+        : '';
+      throw new Error(`获取表单 ${formCode} 的完整代码失败${detail}`);
     }
 
     return codes as FileContentMap;

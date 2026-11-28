@@ -115,7 +115,7 @@ function findSystemField(fieldKey: string, systemFields: FieldInfo[]): FieldInfo
  * 合并系统字段与设计内容中实际收集到的字段。
  * 系统字段排在最前,当用户拖入系统控件并改了名称时,以实际控件名称为准;
  * 无对应控件的系统字段(ObjectId、Status、ParentObjectId)始终用默认值。
- * 类型、备注列始终使用系统字段默认值,其余字段保持原顺序。
+ * 可改名的系统字段沿用设计内容中收集到的备注(含隐藏条件等),不可改名的系统字段使用默认描述。
  */
 function mergeSystemFields(fields: FieldInfo[], systemFields: FieldInfo[]): FieldInfo[] {
   const actualByKey = new Map<string, FieldInfo>();
@@ -138,83 +138,213 @@ function mergeSystemFields(fields: FieldInfo[], systemFields: FieldInfo[]): Fiel
   return merged;
 }
 
+/**
+ * 解析接口中以 JSON 字符串形式返回的配置。
+ */
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 去掉字段编码前的当前表编码前缀，与 fields.md 中子表字段的展示方式保持一致。
+ */
+function stripTablePrefix(fieldKey: string, tableCode: string): string {
+  const prefix = `${tableCode}.`;
+  return fieldKey.startsWith(prefix) ? fieldKey.substring(prefix.length) : fieldKey;
+}
+
+/**
+ * 格式化关联表单控件的填充规则（MappingFill）。
+ * Map 的结构为 { 当前表单字段: 关联表单字段 }，输出时按“关联字段 → 当前字段”展示；
+ * 同一控件的多条规则用分号分隔，带条件的规则在映射前标注条件。
+ */
+function formatMappingFill(options: UnknownRecord, tableCode: string): string {
+  const parsed = parseJsonValue(options.MappingFill);
+  if (!Array.isArray(parsed)) {
+    return '';
+  }
+
+  const rules: string[] = [];
+  parsed.forEach((item) => {
+    const rule = getRecord(item);
+    const map = rule ? getRecord(parseJsonValue(rule.Map)) : undefined;
+    if (!map) {
+      return;
+    }
+
+    const mappings: string[] = [];
+    Object.entries(map).forEach(([target, source]) => {
+      if (typeof source !== 'string' || source === '' || target === '') {
+        return;
+      }
+      mappings.push(`${source}→${stripTablePrefix(target, tableCode)}`);
+    });
+    if (mappings.length === 0) {
+      return;
+    }
+
+    const condition = rule ? getRecord(parseJsonValue(rule.Condition)) : undefined;
+    const conditionText = condition
+      ? (
+        getString(condition, 'FormulaText') ||
+        getString(condition, 'Formula') ||
+        getString(condition, 'Expression') ||
+        getString(condition, 'RuleText')
+      )
+      : '';
+    rules.push(conditionText ? `[条件：${conditionText}] ${mappings.join('、')}` : mappings.join('、'));
+  });
+
+  return rules.join('；');
+}
+
+/**
+ * 读取控件的隐藏条件（DisplayRule）。
+ * RuleRecover 是设计器恢复出的可读规则，优先使用；没有时退回 Rule。
+ * 空串表示未配置（默认显示）；TRUE 表示始终隐藏。
+ */
+function getDisplayRule(options: UnknownRecord): string {
+  const raw = parseJsonValue(options.DisplayRule);
+  const displayRule = Array.isArray(raw) ? undefined : getRecord(raw);
+  if (!displayRule) {
+    return '';
+  }
+
+  const rule = getString(displayRule, 'RuleRecover') || getString(displayRule, 'Rule');
+  const normalized = rule.trim().replace(/^\$\.fn\./, '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  return `隐藏条件：${normalized}`;
+}
+
+/**
+ * 读取控件的数据过滤条件（AssociationFilter）。
+ * 关联表单控件和关联数据源的下拉框都会使用该配置。
+ */
+function getAssociationFilter(options: UnknownRecord): string {
+  const raw = parseJsonValue(options.AssociationFilter);
+  const associationFilter = Array.isArray(raw) ? undefined : getRecord(raw);
+  if (!associationFilter) {
+    return '';
+  }
+
+  const rule = getString(associationFilter, 'RuleRecover') || getString(associationFilter, 'Rule');
+  const normalized = rule.trim().replace(/^\$\.fn\./, '').trim();
+  return normalized ? `数据范围限定：${normalized}` : '';
+}
+
+/**
+ * 依次拼接非空的备注片段。
+ */
+function appendDescription(description: string, ...suffixes: string[]): string {
+  return [description, ...suffixes]
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+    .join('；');
+}
+
+/**
+ * 生成控件计算规则的备注片段。
+ * 公式型控件叫“公式”，其他控件的计算规则统一叫“计算规则”。
+ */
+function getComputationDescription(controlKey: string, options: UnknownRecord): string {
+  const computationRule = getRecord(parseJsonValue(options.ComputationRule));
+  const formula = computationRule ? getString(computationRule, 'Rule') : '';
+  if (!formula) {
+    return controlKey === 'FormFormula' ? '公式未配置' : '';
+  }
+  return controlKey === 'FormFormula' ? `公式：${formula}` : `计算规则：${formula}`;
+}
+
 function getDatabaseDescription(
   key: string,
   controlKey: string,
   options: UnknownRecord,
-  schemaCode: string
+  tableCode: string
 ): string {
+  let description = '';
+
   if (
     controlKey === 'FormRadioButtonList' ||
     controlKey === 'FormCheckboxList' ||
     controlKey === 'FormDropDownList'
   ) {
-    const defaultItems = Array.isArray(options.DefaultItems) ? options.DefaultItems : [];
-    const items = defaultItems.filter((item): item is string => typeof item === 'string');
-    if (items.length === 0) {
-      return '';
+    const dataSource = getString(options, 'DataSource');
+    if (dataSource.toLowerCase() === 'association') {
+      const sourceSchemaCode = getString(options, 'BOSchemaCode');
+      const sourceSchemaName = getString(options, 'BOSchemaName');
+      const mappingField = getString(options, 'MappingField');
+      if (sourceSchemaCode && mappingField) {
+        const sourceName = sourceSchemaName ? `（${sourceSchemaName}）` : '';
+        description = `选项来源：关联表单 ${sourceSchemaCode}${sourceName} 的 ${mappingField} 字段`;
+      } else {
+        description = '选项来源：关联表单配置不完整';
+      }
+    } else {
+      const defaultItems = Array.isArray(options.DefaultItems) ? options.DefaultItems : [];
+      const items = defaultItems.filter((item): item is string => typeof item === 'string');
+      if (items.length > 0) {
+        description = `选项：${items.join('、')}`;
+        if (controlKey === 'FormCheckboxList') {
+          description += '，多值以;分隔';
+        }
+      }
     }
-
-    const itemDescription = `选项：${items.join('、')}`;
-    return controlKey === 'FormCheckboxList' ? `${itemDescription}，多值以;分隔` : itemDescription;
-  }
-
-  if (controlKey === 'FormFormula') {
-    const computationRule = getRecord(options.ComputationRule);
-    const formula = computationRule ? getString(computationRule, 'Rule') : '';
-    return formula ? `公式：${formula}` : '公式未配置';
-  }
-
-  if (controlKey === 'FormRollup') {
+  } else if (controlKey === 'FormRollup') {
     const rollupSettings = Array.isArray(options.RollupSettings) ? options.RollupSettings : [];
     if (rollupSettings.length === 0) {
-      return '汇总配置未设置';
+      description = '汇总配置未设置';
+    } else {
+      const rollupSetting = getRecord(rollupSettings[0]);
+      const propertyMapping = rollupSetting ? getRecord(rollupSetting.PropertyMapping) : undefined;
+      const sourceSchemaCode = rollupSetting ? getString(rollupSetting, 'SourceSchemaCode') : '';
+      const sourcePropertyName = propertyMapping ? getString(propertyMapping, 'SourcePropertyName') : '';
+      description = sourceSchemaCode && sourcePropertyName
+        ? `统计：${sourceSchemaCode}.${sourcePropertyName}`
+        : '汇总配置不完整';
     }
-
-    const rollupSetting = getRecord(rollupSettings[0]);
-    const propertyMapping = rollupSetting ? getRecord(rollupSetting.PropertyMapping) : undefined;
-    const sourceSchemaCode = rollupSetting ? getString(rollupSetting, 'SourceSchemaCode') : '';
-    const sourcePropertyName = propertyMapping ? getString(propertyMapping, 'SourcePropertyName') : '';
-    if (sourceSchemaCode && sourcePropertyName) {
-      return `统计：${sourceSchemaCode}.${sourcePropertyName}`;
-    }
-
-    return '汇总配置不完整';
-  }
-
-  if (controlKey === 'FormAttachment' || controlKey === 'FormPhoto' || controlKey === 'FormHandSign') {
-    return '元数据表：H_BizObjectFile';
-  }
-
-  if (controlKey === 'FormUser') {
-    return '关联 H_User.ObjectId';
-  }
-
-  if (controlKey === 'FormMultiUser') {
-    return '关联 H_User.ObjectId，数据库存储字符串数组JSON';
-  }
-
-  if (controlKey === 'FormDepartment') {
-    return '关联 H_OrganizationUnit.ObjectId';
-  }
-
-  if (controlKey === 'FormMultiDepartment') {
-    return '关联 H_OrganizationUnit.ObjectId，数据库存储字符串数组JSON';
-  }
-
-  if (controlKey === 'FormQuery') {
-    const schemaCode = getString(options, 'BOSchemaCode');
+  } else if (controlKey === 'FormAttachment' || controlKey === 'FormPhoto' || controlKey === 'FormHandSign') {
+    description = '元数据表：H_BizObjectFile';
+  } else if (controlKey === 'FormUser') {
+    description = '关联 H_User.ObjectId';
+  } else if (controlKey === 'FormMultiUser') {
+    description = '关联 H_User.ObjectId，数据库存储字符串数组JSON';
+  } else if (controlKey === 'FormDepartment') {
+    description = '关联 H_OrganizationUnit.ObjectId';
+  } else if (controlKey === 'FormMultiDepartment') {
+    description = '关联 H_OrganizationUnit.ObjectId，数据库存储字符串数组JSON';
+  } else if (controlKey === 'FormQuery') {
+    const targetSchemaCode = getString(options, 'BOSchemaCode');
     const schemaName = getString(options, 'BOSchemaName');
-    return schemaCode ? `目标表单：${schemaCode}${schemaName ? `（${schemaName}）` : ''}` : '关联目标未配置';
-  }
-
-  if (controlKey === 'FormMultiQuery') {
+    const target = targetSchemaCode
+      ? `目标表单：${targetSchemaCode}${schemaName ? `（${schemaName}）` : ''}`
+      : '关联目标未配置';
+    const mappingFill = formatMappingFill(options, tableCode);
+    description = mappingFill ? `${target}；填充：${mappingFill}` : target;
+  } else if (controlKey === 'FormMultiQuery') {
     const targetSchemaCode = getString(options, 'BOSchemaCode');
     const targetSchema = targetSchemaCode || '未配置';
-    return `目标表单：${targetSchema}，数据库中间表：i_${schemaCode}_${key}`;
+    const base = `目标表单：${targetSchema}，数据库中间表：i_${tableCode}_${key}`;
+    const mappingFill = formatMappingFill(options, tableCode);
+    description = mappingFill ? `${base}；填充：${mappingFill}` : base;
   }
 
-  return '';
+  return appendDescription(description, getComputationDescription(controlKey, options));
 }
 
 function createField(record: UnknownRecord, schemaCode: string, childTableCode?: string): FieldInfo | undefined {
@@ -237,6 +367,8 @@ function createField(record: UnknownRecord, schemaCode: string, childTableCode?:
   const fieldKey = childTableCode && key.startsWith(`${childTableCode}.`)
     ? key.substring(childTableCode.length + 1)
     : key;
+  const displayRule = getDisplayRule(options);
+  const associationFilter = getAssociationFilter(options);
 
   // 系统字段以 key 识别。类型、备注使用系统字段默认值;
   // 只有可拖入设计器并允许改名的系统控件才用设计内容里的名称,其余保持默认名称。
@@ -249,7 +381,7 @@ function createField(record: UnknownRecord, schemaCode: string, childTableCode?:
         : systemField.displayName,
       controlType: systemField.controlType,
       valueType: systemField.valueType,
-      databaseDescription: systemField.databaseDescription
+      databaseDescription: appendDescription(systemField.databaseDescription, associationFilter, displayRule)
     };
   }
 
@@ -267,7 +399,11 @@ function createField(record: UnknownRecord, schemaCode: string, childTableCode?:
     displayName: getCompactDisplayName(displayName, fieldKey),
     controlType: metadata.controlType,
     valueType: metadata.valueType,
-    databaseDescription: getDatabaseDescription(fieldKey, controlKey, options, childTableCode || schemaCode)
+    databaseDescription: appendDescription(
+      getDatabaseDescription(fieldKey, controlKey, options, childTableCode || schemaCode),
+      associationFilter,
+      displayRule
+    )
   };
 }
 
@@ -311,9 +447,13 @@ function collectControls(
   collectControls(childControls, mainFields, childTables, schemaCode, childTable);
 }
 
-function extractSchemaInfo(jsonData: SheetDesignerLoadFormResponse, fallbackSchemaCode?: string): SchemaInfo {
+function extractSchemaInfo(
+  jsonData: SheetDesignerLoadFormResponse,
+  fallbackSchemaCode?: string,
+  fallbackName?: string
+): SchemaInfo {
   const source = (jsonData.ReturnData || jsonData.returnData || jsonData) as SchemaResponseData;
-  const schemaName = source.SheetName || source.sheetName || source.functionNode?.displayName || '';
+  const schemaName = source.SheetName || source.sheetName || fallbackName || source.functionNode?.displayName || '';
   const schemaCode = source.SheetCode || source.sheetCode || fallbackSchemaCode || '';
   const designContent = source.DesignModeContent || source.designContent || jsonData.DesignModeContent || jsonData.designContent;
   if (!schemaName || !schemaCode) {
@@ -367,8 +507,12 @@ export function hasFormSchema(jsonData: SheetDesignerLoadFormResponse): boolean 
 /**
  * 解析表单设计响应，生成包含控件和值类型的 Markdown 字段表。
  */
-export function parseSchemaJSON(jsonData: SheetDesignerLoadFormResponse, formCode?: string): string {
-  const { schemaName, schemaCode, controlsData } = extractSchemaInfo(jsonData, formCode);
+export function parseSchemaJSON(
+  jsonData: SheetDesignerLoadFormResponse,
+  formCode?: string,
+  formName?: string
+): string {
+  const { schemaName, schemaCode, controlsData } = extractSchemaInfo(jsonData, formCode, formName);
   const mainFields: FieldInfo[] = [];
   const childTables: ChildTableInfo[] = [];
   collectControls(controlsData, mainFields, childTables, schemaCode);

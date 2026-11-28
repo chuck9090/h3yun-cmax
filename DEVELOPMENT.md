@@ -250,7 +250,13 @@ src/services/h3yunApi.ts
 
 氚云新版本接口服务。
 
-当前该文件继承 `H3YunLegacyApiService`，但已覆盖列表设计器代码的读取：列表前端和列表后端代码改走新版接口 `/v1/view/designer/load`。其余能力（表单结构、表单前后端代码等）仍复用老版本实现。后续确认更多新版本接口差异时，只需要在 `H3YunNewApiService` 中覆盖对应方法，不要把新版本判断散落到命令层或 parser 外层。
+当前该文件继承 `H3YunLegacyApiService`，并覆盖以下新版接口：
+
+- 表单设计：`GET /v1/formdesign/load?schemaCode=...`，取 `returnData.designContent` 生成 `fields.md`
+- 表单前后端代码：`POST /v1/codeeditor/loadcode`，body 为 `{ "schemaCode": "...", "type": 1 }`，取 `returnData.jsCode` / `returnData.behindCode`
+- 列表前后端代码：`GET /v1/view/designer/load?schemaCode=...`
+
+后续确认更多新版本接口差异时，只需要在 `H3YunNewApiService` 中覆盖对应方法，不要把新版本判断散落到命令层或 parser 外层。
 
 ### `src/services/automationReport.ts`
 

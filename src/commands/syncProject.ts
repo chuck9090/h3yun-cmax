@@ -737,7 +737,7 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
         const formCodesMap = new Map<string, Partial<FileContentMap>>();
         await mapWithConcurrency(targetForms, FORM_REQUEST_CONCURRENCY, async (form) => {
           try {
-            const codes = await h3yunApi.getFormCodes(form.formCode, scope);
+            const codes = await h3yunApi.getFormCodes(form.formCode, scope, form.formName);
             formCodesMap.set(form.formCode, codes);
           } catch (error) {
             console.error(`获取表单 "${form.formName}" ${contentLabel}失败:`, error);
@@ -924,6 +924,8 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
           }
         }
 
+        const codeFailures = h3yunApi.consumeCodeFailures();
+
         // Step 4: 更新 cmax.json 配置文件
         // 同步代码不处理表单增减,保留原有表单映射,避免把已删除或新增的表单误写进配置。
         progress.report({ message: '正在更新配置文件...', increment: 95 });
@@ -959,7 +961,9 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
         const automationText = automationSummary
           ? `, 自动化: ${automationSummary.automationCount}`
           : '';
-        const summary = `${completionPrefix} 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${skippedSummary}${deletedSummary}${automationText}`;
+        const codeFailureFormCount = new Set(codeFailures.map((failure) => failure.formCode)).size;
+        const codeFailureSummary = codeFailureFormCount > 0 ? `, 代码获取失败: ${codeFailureFormCount}` : '';
+        const summary = `${completionPrefix} 成功: ${successCount}, 失败: ${failCount}, 总计: ${totalForms}${skippedSummary}${deletedSummary}${automationText}${codeFailureSummary}`;
 
         // 用户在差异预览里点过“放弃确认”:差异文件全部保留本地版本,需要明确引导重新同步并统一处理
         const conflictSkipCount = conflictSession.skippedBySession;
@@ -972,10 +976,25 @@ export async function handleSyncProject(uri?: vscode.Uri, scope: SyncScope = 'al
           return;
         }
 
-        if (failCount === 0) {
+        if (failCount === 0 && codeFailures.length === 0) {
           vscode.window.showInformationMessage(summary);
         } else {
-          vscode.window.showWarningMessage(summary);
+          const codeFailureGroups = new Map<string, { name: string; parts: Set<string> }>();
+          codeFailures.forEach((failure) => {
+            const key = failure.formCode;
+            const group = codeFailureGroups.get(key) || {
+              name: failure.formName || failure.formCode,
+              parts: new Set<string>()
+            };
+            group.parts.add(failure.part === 'form' ? '表单代码' : '列表代码');
+            codeFailureGroups.set(key, group);
+          });
+          const codeFailureDetail = codeFailureGroups.size > 0
+            ? `\n\n以下表单的代码获取失败，相关代码文件未更新（新建目录可能尚未生成）:\n${Array.from(codeFailureGroups.values())
+              .map((group) => `${group.name}（${Array.from(group.parts).join('、')}）`)
+              .join('\n')}`
+            : '';
+          vscode.window.showWarningMessage(`${summary}${codeFailureDetail}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

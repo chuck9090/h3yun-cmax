@@ -202,7 +202,7 @@ export async function handleBuildProject(): Promise<void> {
           });
 
           try {
-            const codes = await h3yunApi.getFormAllCodes(form.formCode);
+            const codes = await h3yunApi.getFormAllCodes(form.formCode, form.formName);
             const { folderPath: formFolderPath, suffix: formSuffix } = fileService.createFormFolder(
               appFolderPath,
               form.formName,
